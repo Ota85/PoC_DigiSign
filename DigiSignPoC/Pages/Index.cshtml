@@ -1,0 +1,18 @@
+﻿@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Start Verification";
+}
+
+<h1>DigiSign Identify – Verification</h1>
+<p>Click the button below to start the identity verification process. A new browser tab will open with the DigiSign verification form.</p>
+
+@if (Model.ErrorMessage is not null)
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+
+<form method="post">
+    <button type="submit" class="btn btn-primary">Start Verification</button>
+</form>
+

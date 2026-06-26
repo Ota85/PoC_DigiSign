@@ -1,0 +1,24 @@
+@page
+@model CallbackModel
+@{
+    ViewData["Title"] = "Verification Result";
+}
+
+<h1>Verification Result</h1>
+
+@if (Model.Status is not null)
+{
+    <div class="alert @(Model.Status == "success" ? "alert-success" : "alert-warning")">
+        <strong>Status:</strong> @Model.Status
+    </div>
+}
+
+<dl class="row">
+    @foreach (var (key, value) in Model.QueryParams)
+    {
+        <dt class="col-sm-3">@key</dt>
+        <dd class="col-sm-9">@value</dd>
+    }
+</dl>
+
+<a class="btn btn-secondary" asp-page="/Index">Start a new verification</a>
