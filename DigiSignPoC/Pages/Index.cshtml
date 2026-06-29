@@ -29,7 +29,7 @@
     <a class="btn btn-secondary" asp-page="/Index">Start a new verification</a>
 
     @section Scripts {
-        <script>window.open('@Model.VerificationUrl', '_blank', 'noopener,noreferrer');</script>
+        <script>window.open(@Json.Serialize(Model.VerificationUrl), '_blank', 'noopener,noreferrer');</script>
     }
 }
 else

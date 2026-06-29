@@ -18,13 +18,13 @@ public class IndexModel(IHttpClientFactory httpClientFactory, IConfiguration con
         var cfg = configuration.GetSection("DigiSign");
         var scenarioId = cfg["ScenarioId"]!;
         var name = cfg["Name"] ?? "PoC Verification";
-        var redirectUrl = cfg["RedirectUrl"].NullIfEmpty()
+        var redirectUrl = cfg["RedirectUrl"]?.NullIfEmpty()
                           ?? $"{Request.Scheme}://{Request.Host}/Callback";
         var validityMinutes = cfg.GetValue<int>("ValidityMinutes");
 
         logger.LogDebug(
             "Creating identification: scenario={ScenarioId}, name={Name}, redirectUrl={RedirectUrl}, validityMinutes={ValidityMinutes}",
-            scenarioId, name, redirectUrl, validityMinutes > 0 ? validityMinutes : null);
+            scenarioId, name, redirectUrl.Replace('\r', ' ').Replace('\n', ' '), validityMinutes > 0 ? validityMinutes : null);
 
         var http = httpClientFactory.CreateClient("DigiSign");
 
