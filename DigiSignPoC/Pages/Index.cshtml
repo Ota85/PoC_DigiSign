@@ -1,18 +1,43 @@
-﻿@page
+@page
 @model IndexModel
 @{
     ViewData["Title"] = "Start Verification";
 }
 
 <h1>DigiSign Identify – Verification</h1>
-<p>Click the button below to start the identity verification process. A new browser tab will open with the DigiSign verification form.</p>
 
 @if (Model.ErrorMessage is not null)
 {
     <div class="alert alert-danger">@Model.ErrorMessage</div>
 }
 
-<form method="post">
-    <button type="submit" class="btn btn-primary">Start Verification</button>
-</form>
+@if (Model.VerificationUrl is not null)
+{
+    <div class="alert alert-success">
+        <strong>Identification created.</strong>
+        The DigiSign verification page should open in a new tab automatically.<br />
+        If it did not open, <a href="@Model.VerificationUrl" target="_blank" rel="noopener noreferrer">click here</a>.
+    </div>
+
+    <dl class="row">
+        <dt class="col-sm-3">Identification ID</dt>
+        <dd class="col-sm-9"><code>@Model.IdentificationId</code></dd>
+        <dt class="col-sm-3">Verification URL</dt>
+        <dd class="col-sm-9"><a href="@Model.VerificationUrl" target="_blank" rel="noopener noreferrer">@Model.VerificationUrl</a></dd>
+    </dl>
+
+    <a class="btn btn-secondary" asp-page="/Index">Start a new verification</a>
+
+    @section Scripts {
+        <script>window.open('@Model.VerificationUrl', '_blank', 'noopener,noreferrer');</script>
+    }
+}
+else
+{
+    <p>Click the button below to start the identity verification process. A new browser tab will open with the DigiSign verification form.</p>
+
+    <form method="post">
+        <button type="submit" class="btn btn-primary">Start Verification</button>
+    </form>
+}
 

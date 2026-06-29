@@ -21,9 +21,3 @@ public class CallbackModel(ILogger<CallbackModel> logger) : PageModel
             string.Join(", ", QueryParams.Select(p => $"{p.Key}={p.Value}")));
     }
 }
-
-internal static class StringExtensions
-{
-    internal static string? NullIfEmpty(this string value) =>
-        string.IsNullOrEmpty(value) ? null : value;
-}
