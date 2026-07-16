@@ -6,23 +6,56 @@
 
 <h1>Verification Result</h1>
 
-@if (Model.Status is not null)
+@if (Model.ErrorMessage is not null)
 {
-    <div class="alert alert-info">
-        <strong>Returned status:</strong> @Model.Status
-    </div>
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
 }
 else
 {
-    <div class="alert alert-info">
-        DigiSign returned to the configured callback URL without a status query parameter.
+    var alertClass = Model.ProviderStatus == "approved"
+        ? "alert-success"
+        : Model.ProviderStatus is "denied" or "cancelled" or "expired"
+            ? "alert-danger"
+            : "alert-warning";
+
+    <div class="alert @alertClass">
+        <strong>Authoritative DigiSign status:</strong> @Model.ProviderStatus
     </div>
+
+    <dl class="row">
+        <dt class="col-sm-3">Identification ID</dt>
+        <dd class="col-sm-9"><code>@Model.IdentificationId</code></dd>
+        @if (Model.ApprovalMode is not null)
+        {
+            <dt class="col-sm-3">Approval mode</dt>
+            <dd class="col-sm-9">@Model.ApprovalMode</dd>
+        }
+        @if (Model.CompletedAt is not null)
+        {
+            <dt class="col-sm-3">Completed at</dt>
+            <dd class="col-sm-9">@Model.CompletedAt</dd>
+        }
+        @if (Model.ApprovedAt is not null)
+        {
+            <dt class="col-sm-3">Approved at</dt>
+            <dd class="col-sm-9">@Model.ApprovedAt</dd>
+        }
+        @if (Model.DeniedAt is not null)
+        {
+            <dt class="col-sm-3">Denied at</dt>
+            <dd class="col-sm-9">@Model.DeniedAt</dd>
+        }
+    </dl>
+
+    <p>
+        <strong>approved</strong> means DigiSign approved the identification.
+        <strong>completed</strong> only means that the user submitted the verification.
+        <strong>for_review</strong> requires an administrator decision.
+    </p>
 }
 
-<p>
-    These values are displayed for PoC flow analysis. A browser redirect alone is not an
-    authoritative identity-verification result.
-</p>
+<h2 class="h4 mt-4">Browser callback parameters</h2>
+<p class="text-muted">These parameters are displayed for technical analysis and are not used as the trusted result.</p>
 
 @if (Model.QueryParams.Count > 0)
 {
@@ -34,5 +67,10 @@ else
         }
     </dl>
 }
+else
+{
+    <p>No query parameters were returned.</p>
+}
 
-<a class="btn btn-secondary" asp-page="/Index">Start a new verification</a>
+<a class="btn btn-outline-primary" asp-page="/Callback">Refresh DigiSign status</a>
+<a class="btn btn-primary" asp-page="/Index">Start a new verification</a>

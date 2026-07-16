@@ -9,7 +9,8 @@ process:
 2. Start it with `POST /api/identifications/{id}/start`.
 3. Open the returned `identifyUrl` in a new browser tab.
 4. Let DigiSign redirect the browser back to `/Callback`.
-5. Display the returned query parameters for technical analysis.
+5. Retrieve the authoritative identification status from DigiSign.
+6. Display the result and returned query parameters for technical analysis.
 
 This is a PoC, not a production identity-verification application.
 
@@ -17,7 +18,7 @@ This is a PoC, not a production identity-verification application.
 
 - .NET 10 SDK
 - DigiSign Identify sandbox or production account
-- Bearer JWT accepted by the selected DigiSign environment
+- Bearer JWT, or a DigiSign `accessKey` and `secretKey`
 - Configured DigiSign Identify scenario
 
 The selected scenario controls whether DigiSign requests identity documents, a selfie, liveness
@@ -30,8 +31,9 @@ Non-secret defaults are stored in `DigiSignPoC/appsettings.json`:
 ```json
 {
   "DigiSign": {
-    "BaseUrl": "https://api.digisign.org",
+    "BaseUrl": "https://api.staging.digisign.org",
     "BearerToken": "",
+    "AccessKey": "",
     "ScenarioId": "",
     "Name": "PoC Verification",
     "RedirectUrl": "",
@@ -43,17 +45,20 @@ Non-secret defaults are stored in `DigiSignPoC/appsettings.json`:
 | Key | Required | Description |
 |---|---|---|
 | `BaseUrl` | yes | DigiSign API URL. Use the staging URL for sandbox testing. |
-| `BearerToken` | yes | Bearer JWT used by the DigiSign API. |
+| `BearerToken` | optional | Existing bearer JWT used by the DigiSign API. |
+| `AccessKey` | optional | API access key used by the UI to obtain a bearer JWT. |
 | `ScenarioId` | yes | ID of the Identify scenario configured in DigiSign. |
 | `Name` | no | Display name of the identification. |
 | `RedirectUrl` | recommended | Absolute HTTPS callback URL. If empty, the app builds `/Callback` from the current request. |
 | `LinkExpiration` | no | Start-link validity in minutes. `0` omits the field and uses the provider default of 5 minutes. |
 
-Do not commit real credentials. For local development:
+The `secretKey` is entered only in the UI and is not stored by the PoC. Do not commit real
+credentials. Existing values may still be supplied through User Secrets:
 
 ```powershell
 cd DigiSignPoC
 dotnet user-secrets set "DigiSign:BearerToken" "<jwt>"
+dotnet user-secrets set "DigiSign:AccessKey" "<access-key>"
 dotnet user-secrets set "DigiSign:ScenarioId" "<scenario-id>"
 dotnet user-secrets set "DigiSign:RedirectUrl" "https://localhost:7025/Callback"
 ```
@@ -68,7 +73,14 @@ cd DigiSignPoC
 dotnet run --launch-profile https
 ```
 
-Open `https://localhost:7025` and click **Start Verification**.
+Open `https://localhost:7025`. The UI supports the complete PoC flow:
+
+1. Select the DigiSign environment.
+2. Enter an existing bearer JWT, or enter `accessKey` and `secretKey` and select
+   **Get bearer token**.
+3. Enter a scenario ID or select **Load available scenarios**.
+4. Review the identification settings.
+5. Select **Create and start verification**.
 
 The browser may block the automatic new tab. The result page always contains a fallback link to
 open DigiSign manually.
@@ -117,11 +129,12 @@ does not use an iframe.
 
 ### 3. Return
 
-DigiSign redirects the browser to the configured `redirectUrl`. The callback page displays any
-returned status and query parameters for analysis.
+DigiSign redirects the browser to the configured `redirectUrl`. The PoC stores the identification
+ID and bearer JWT in its in-memory session, calls `GET /api/identifications/{id}`, and displays the
+authoritative DigiSign status together with any browser query parameters.
 
-The callback values come through the user's browser and must not be treated as authoritative proof
-that the person was approved.
+Only the API status is treated as the provider result. Browser callback parameters are displayed
+for technical analysis only.
 
 ## Acceptance criteria coverage
 
@@ -131,14 +144,13 @@ that the person was approved.
 | AK-02 | Creates the identification and displays its provider ID. |
 | AK-03 | Starts the identification and reads `identifyUrl`. |
 | AK-04 | Opens `identifyUrl` in a new tab with a manual fallback; no iframe. |
-| AK-05 | `/Callback` displays a readable return state and query parameters. |
+| AK-05 | `/Callback` displays the authoritative API status and browser query parameters. |
 | AK-06 | Optional `LinkExpiration`; omitted for the five-minute provider default. |
 | AK-07 | Credentials and environment values come from configuration/secrets, not source code. |
 | AK-08 | This README records the flow, configuration, limitations, and production questions. |
 
 ## Open questions for production
 
-- Fetch and evaluate the authoritative identification status using the DigiSign API.
 - Correlate the identification ID with the authenticated application user.
 - Decide which statuses permit the loan process to continue (`approved`, `for_review`, and so on).
 - Persist only the required result data and define retention rules for identity information.

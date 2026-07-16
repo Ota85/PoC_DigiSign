@@ -1,15 +1,16 @@
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorPages();
-
-// Register a named HttpClient for the DigiSign Identify API.
-builder.Services.AddHttpClient("DigiSign", client =>
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
 {
-    var cfg = builder.Configuration.GetSection("DigiSign");
-    client.BaseAddress = new Uri(cfg["BaseUrl"]!);
-    client.DefaultRequestHeaders.Authorization =
-        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cfg["BearerToken"]);
+    options.IdleTimeout = TimeSpan.FromHours(2);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+    options.Cookie.SameSite = SameSiteMode.Lax;
 });
+
+builder.Services.AddHttpClient("DigiSign");
 
 var app = builder.Build();
 
@@ -21,6 +22,7 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseRouting();
+app.UseSession();
 app.MapStaticAssets();
 app.MapRazorPages()
    .WithStaticAssets();
