@@ -16,20 +16,37 @@ public class IndexModel(IHttpClientFactory httpClientFactory, IConfiguration con
     public async Task OnPostAsync()
     {
         var cfg = configuration.GetSection("DigiSign");
-        var scenarioId = cfg["ScenarioId"]!;
+        var scenarioId = cfg["ScenarioId"];
         var name = cfg["Name"] ?? "PoC Verification";
         var redirectUrl = cfg["RedirectUrl"]?.NullIfEmpty()
                           ?? $"{Request.Scheme}://{Request.Host}/Callback";
-        var validityMinutes = cfg.GetValue<int>("ValidityMinutes");
+        var linkExpiration = cfg.GetValue<int>("LinkExpiration");
+
+        if (string.IsNullOrWhiteSpace(scenarioId))
+        {
+            ErrorMessage = "DigiSign ScenarioId is not configured.";
+            return;
+        }
+
+        if (!Uri.TryCreate(redirectUrl, UriKind.Absolute, out _))
+        {
+            ErrorMessage = "DigiSign RedirectUrl must be an absolute URL.";
+            return;
+        }
 
         logger.LogDebug(
-            "Creating identification: scenario={ScenarioId}, name={Name}, redirectUrl={RedirectUrl}, validityMinutes={ValidityMinutes}",
-            scenarioId, name, redirectUrl.Replace('\r', ' ').Replace('\n', ' '), validityMinutes > 0 ? validityMinutes : null);
+            "Creating identification: scenario={ScenarioId}, name={Name}, redirectUrl={RedirectUrl}, linkExpiration={LinkExpiration}",
+            scenarioId, name, redirectUrl.Replace('\r', ' ').Replace('\n', ' '), linkExpiration > 0 ? linkExpiration : null);
 
         var http = httpClientFactory.CreateClient("DigiSign");
 
         // Step 1: Create an identification (AK-01, AK-02)
-        var createBody = JsonSerializer.Serialize(new { scenarioId, name });
+        var createBody = JsonSerializer.Serialize(new
+        {
+            identifyScenario = scenarioId,
+            redirectUrl,
+            name
+        });
         var createResponse = await http.PostAsync(
             "api/identifications",
             new StringContent(createBody, Encoding.UTF8, "application/json"));
@@ -46,14 +63,20 @@ public class IndexModel(IHttpClientFactory httpClientFactory, IConfiguration con
         logger.LogDebug("POST /api/identifications response: {Body}", createJson);
 
         using var createDoc = JsonDocument.Parse(createJson);
-        IdentificationId = createDoc.RootElement.GetProperty("id").GetString()!;
+        IdentificationId = createDoc.RootElement.GetProperty("id").GetString();
+
+        if (string.IsNullOrWhiteSpace(IdentificationId))
+        {
+            ErrorMessage = "DigiSign did not return an identification ID.";
+            return;
+        }
 
         logger.LogInformation("Identification created: {IdentificationId}", IdentificationId);
 
         // Step 2: Start the identification to obtain the verification URL (AK-03, AK-06)
-        object startPayload = validityMinutes > 0
-            ? new { redirectUrl, validityMinutes }
-            : new { redirectUrl };
+        object startPayload = linkExpiration > 0
+            ? new { linkExpiration }
+            : new { };
 
         var startBody = JsonSerializer.Serialize(startPayload);
         var startResponse = await http.PostAsync(
@@ -72,9 +95,15 @@ public class IndexModel(IHttpClientFactory httpClientFactory, IConfiguration con
         logger.LogDebug("POST /api/identifications/{Id}/start response: {Body}", IdentificationId, startJson);
 
         using var startDoc = JsonDocument.Parse(startJson);
-        VerificationUrl = startDoc.RootElement.GetProperty("url").GetString()!;
+        VerificationUrl = startDoc.RootElement.GetProperty("identifyUrl").GetString();
 
-        logger.LogInformation("Verification URL obtained: {Url}", VerificationUrl);
+        if (string.IsNullOrWhiteSpace(VerificationUrl))
+        {
+            ErrorMessage = "DigiSign did not return an identify URL.";
+            return;
+        }
+
+        logger.LogInformation("Verification URL obtained for identification {IdentificationId}.", IdentificationId);
         // The URL is rendered in the view, which opens it in a new tab (AK-04).
     }
 }

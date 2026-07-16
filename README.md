@@ -1,31 +1,31 @@
 # PoC_DigiSign
 
-Proof of Concept for the [DigiSign Identify](https://www.digisign.cz/) integration.
+Small ASP.NET Core Proof of Concept for the standalone DigiSign Identify verification flow.
 
-The application demonstrates the DigiSign Identify provider flow:
+The purpose is to verify the real provider journey before designing a production business
+process:
 
-1. User clicks **Start Verification** on the home page.
-2. The app calls `POST /api/identifications` to create a new identification (with `scenarioId` and `name`).
-3. The app calls `POST /api/identifications/{id}/start` to get the verification URL (with `redirectUrl` and optional `validityMinutes`).
-4. The browser opens the DigiSign verification page in a **new tab** (not an iframe; DigiSign does not support iframe embedding for document verification).
-5. After verification DigiSign redirects the user back to `/Callback`, which displays the result status and all returned query parameters.
+1. Create an identification with `POST /api/identifications`.
+2. Start it with `POST /api/identifications/{id}/start`.
+3. Open the returned `identifyUrl` in a new browser tab.
+4. Let DigiSign redirect the browser back to `/Callback`.
+5. Display the returned query parameters for technical analysis.
 
----
+This is a PoC, not a production identity-verification application.
 
 ## Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- A DigiSign Identify account with:
-  - A bearer token
-  - A configured verification scenario (scenario ID)
+- .NET 10 SDK
+- DigiSign Identify sandbox or production account
+- Bearer JWT accepted by the selected DigiSign environment
+- Configured DigiSign Identify scenario
 
----
+The selected scenario controls whether DigiSign requests identity documents, a selfie, liveness
+checks, and automatic or manual approval.
 
 ## Configuration
 
-The application reads configuration from `appsettings.json` and [User Secrets](https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets).
-
-`appsettings.json` contains non-secret defaults:
+Non-secret defaults are stored in `DigiSignPoC/appsettings.json`:
 
 ```json
 {
@@ -35,127 +35,112 @@ The application reads configuration from `appsettings.json` and [User Secrets](h
     "ScenarioId": "",
     "Name": "PoC Verification",
     "RedirectUrl": "",
-    "ValidityMinutes": 0
+    "LinkExpiration": 0
   }
 }
 ```
 
 | Key | Required | Description |
-|-----|----------|-------------|
-| `BaseUrl` | yes | DigiSign API base URL |
-| `BearerToken` | yes | API bearer token from the DigiSign portal |
-| `ScenarioId` | yes | ID of the verification scenario to use |
-| `Name` | no | Display name sent with the identification (default: `PoC Verification`) |
-| `RedirectUrl` | no | Absolute callback URL; if empty, auto-built from the incoming request host |
-| `ValidityMinutes` | no | Requested validity of the start URL in minutes; `0` = provider default (5 min) |
+|---|---|---|
+| `BaseUrl` | yes | DigiSign API URL. Use the staging URL for sandbox testing. |
+| `BearerToken` | yes | Bearer JWT used by the DigiSign API. |
+| `ScenarioId` | yes | ID of the Identify scenario configured in DigiSign. |
+| `Name` | no | Display name of the identification. |
+| `RedirectUrl` | recommended | Absolute HTTPS callback URL. If empty, the app builds `/Callback` from the current request. |
+| `LinkExpiration` | no | Start-link validity in minutes. `0` omits the field and uses the provider default of 5 minutes. |
 
-Store secrets locally using the .NET User Secrets tool (never commit real tokens):
+Do not commit real credentials. For local development:
 
-```bash
+```powershell
 cd DigiSignPoC
-dotnet user-secrets set "DigiSign:BearerToken" "<your-bearer-token>"
-dotnet user-secrets set "DigiSign:ScenarioId" "<your-scenario-id>"
+dotnet user-secrets set "DigiSign:BearerToken" "<jwt>"
+dotnet user-secrets set "DigiSign:ScenarioId" "<scenario-id>"
+dotnet user-secrets set "DigiSign:RedirectUrl" "https://localhost:7025/Callback"
 ```
 
-Alternatively use environment variables (double underscore maps to nested config keys):
+Configuration can also be supplied through environment variables such as
+`DigiSign__BearerToken` and `DigiSign__ScenarioId`.
 
-```bash
-DigiSign__BearerToken="<token>" DigiSign__ScenarioId="<id>" dotnet run
-```
+## Run
 
----
-
-## Running the application
-
-```bash
+```powershell
 cd DigiSignPoC
-dotnet run
+dotnet run --launch-profile https
 ```
 
-Open the URL printed in the console (e.g. `https://localhost:5001`) and click **Start Verification**.
+Open `https://localhost:7025` and click **Start Verification**.
 
----
+The browser may block the automatic new tab. The result page always contains a fallback link to
+open DigiSign manually.
 
-## Project structure
+## Request and response flow
 
-```
-DigiSignPoC/
-├── Program.cs                  # App entry point, HttpClient registration
-├── appsettings.json            # Non-secret configuration
-├── DigiSignPoC.csproj
-└── Pages/
-    ├── Index.cshtml            # Start verification button; shows identification ID and opens URL in new tab
-    ├── Index.cshtml.cs         # Calls DigiSign API (create + start), exposes result to view
-    ├── Callback.cshtml         # Shows result after DigiSign redirects back
-    ├── Callback.cshtml.cs      # Reads and logs callback query parameters
-    ├── Shared/
-    │   └── _Layout.cshtml      # Minimal Bootstrap layout
-    ├── _ViewImports.cshtml
-    └── _ViewStart.cshtml
-```
+### 1. Create identification
 
----
-
-## Logging
-
-Set `"DigiSignPoC": "Debug"` in `appsettings.json` (already the default) to see detailed request/response logs from the DigiSign API calls.
-
----
-
-## Technical record
-
-### Verified request/response flow
-
-**Step 1 – Create identification**
-
-```
+```http
 POST /api/identifications
-Authorization: ******
+Authorization: Bearer <token>
 Content-Type: application/json
 
-{ "scenarioId": "<id>", "name": "PoC Verification" }
-
-→ 201 { "id": "<identification-id>", ... }
+{
+  "identifyScenario": "<scenario-id>",
+  "redirectUrl": "https://localhost:7025/Callback",
+  "name": "PoC Verification"
+}
 ```
 
-**Step 2 – Start identification**
+The response contains the provider identification `id`, which the PoC displays and uses in the
+next request.
 
-```
-POST /api/identifications/<identification-id>/start
-Authorization: ******
+### 2. Start identification
+
+With the provider-default five-minute link validity:
+
+```http
+POST /api/identifications/{id}/start
+Authorization: Bearer <token>
 Content-Type: application/json
 
-{ "redirectUrl": "https://<host>/Callback" }
-  // optionally: "validityMinutes": <n>
-
-→ 200 { "url": "https://verify.digisign.cz/...", ... }
+{}
 ```
 
-**Step 3 – User completes verification on DigiSign page**
+With a configured longer validity:
 
-DigiSign redirects back to the configured `redirectUrl` with query parameters, e.g.:
-
+```json
+{
+  "linkExpiration": 15
+}
 ```
-GET /Callback?status=success&identificationId=<id>
-```
 
-The callback page displays the `status` value and all returned query parameters.
+The response contains `identifyUrl` and `validTo`. The PoC opens `identifyUrl` in a new tab and
+does not use an iframe.
 
-### New-tab / new-window constraint
+### 3. Return
 
-DigiSign does not support iframe embedding for document-based verification. The app opens the verification URL via `window.open(url, '_blank')` triggered on page load after the start call. Note that **browser popup blockers may suppress this**; the page always includes a visible fallback link so the user can open the URL manually.
+DigiSign redirects the browser to the configured `redirectUrl`. The callback page displays any
+returned status and query parameters for analysis.
 
-### Required configuration values
+The callback values come through the user's browser and must not be treated as authoritative proof
+that the person was approved.
 
-| Value | Where to find it |
-|-------|-----------------|
-| `BearerToken` | DigiSign portal → API / Integration settings → generate/copy token |
-| `ScenarioId` | DigiSign portal → Scenarios → open scenario → copy ID (UUID) |
+## Acceptance criteria coverage
 
-### Open questions for production implementation
+| Criterion | PoC implementation |
+|---|---|
+| AK-01 | `ScenarioId`, absolute `RedirectUrl`, and `Name` are configurable. |
+| AK-02 | Creates the identification and displays its provider ID. |
+| AK-03 | Starts the identification and reads `identifyUrl`. |
+| AK-04 | Opens `identifyUrl` in a new tab with a manual fallback; no iframe. |
+| AK-05 | `/Callback` displays a readable return state and query parameters. |
+| AK-06 | Optional `LinkExpiration`; omitted for the five-minute provider default. |
+| AK-07 | Credentials and environment values come from configuration/secrets, not source code. |
+| AK-08 | This README records the flow, configuration, limitations, and production questions. |
 
-1. **Server-side result verification** – the callback `?status=` query parameter is not cryptographically signed. Production code should call `GET /api/identifications/{id}` to fetch the authoritative result from DigiSign's server instead of trusting the redirect parameter.
-2. **User account linking** – the PoC has no concept of sessions or user accounts. Production must associate the `identificationId` with the logged-in user before redirecting and verify it matches on callback.
-3. **Result persistence** – verification results should be stored in a database.
-4. **`validityMinutes` sandbox support** – needs to be confirmed with DigiSign whether the sandbox environment honours this field on the start endpoint.
-5. **HTTPS requirement** – DigiSign requires an HTTPS `redirectUrl`. Local development may need a trusted dev certificate (`dotnet dev-certs https --trust`).
+## Open questions for production
+
+- Fetch and evaluate the authoritative identification status using the DigiSign API.
+- Correlate the identification ID with the authenticated application user.
+- Decide which statuses permit the loan process to continue (`approved`, `for_review`, and so on).
+- Persist only the required result data and define retention rules for identity information.
+- Consider signed DigiSign webhooks for reliable asynchronous status updates.
+- Confirm production authentication/token renewal and the final scenario configuration.

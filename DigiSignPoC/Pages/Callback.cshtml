@@ -8,17 +8,31 @@
 
 @if (Model.Status is not null)
 {
-    <div class="alert @(Model.Status == "success" ? "alert-success" : "alert-warning")">
-        <strong>Status:</strong> @Model.Status
+    <div class="alert alert-info">
+        <strong>Returned status:</strong> @Model.Status
+    </div>
+}
+else
+{
+    <div class="alert alert-info">
+        DigiSign returned to the configured callback URL without a status query parameter.
     </div>
 }
 
-<dl class="row">
-    @foreach (var (key, value) in Model.QueryParams)
-    {
-        <dt class="col-sm-3">@key</dt>
-        <dd class="col-sm-9">@value</dd>
-    }
-</dl>
+<p>
+    These values are displayed for PoC flow analysis. A browser redirect alone is not an
+    authoritative identity-verification result.
+</p>
+
+@if (Model.QueryParams.Count > 0)
+{
+    <dl class="row">
+        @foreach (var (key, value) in Model.QueryParams)
+        {
+            <dt class="col-sm-3">@key</dt>
+            <dd class="col-sm-9">@value</dd>
+        }
+    </dl>
+}
 
 <a class="btn btn-secondary" asp-page="/Index">Start a new verification</a>

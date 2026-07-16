@@ -17,7 +17,6 @@ public class CallbackModel(ILogger<CallbackModel> logger) : PageModel
         Status = Request.Query["status"].ToString().NullIfEmpty()
                ?? Request.Query["Status"].ToString().NullIfEmpty();
 
-        logger.LogInformation("DigiSign callback received. Params: {Params}",
-            string.Join(", ", QueryParams.Select(p => $"{p.Key}={p.Value}")));
+        logger.LogInformation("DigiSign callback received with {ParameterCount} query parameters.", QueryParams.Count);
     }
 }
