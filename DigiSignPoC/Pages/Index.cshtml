@@ -9,7 +9,14 @@
 
 @if (Model.ErrorMessage is not null)
 {
-    <div class="alert alert-danger">@Model.ErrorMessage</div>
+    <div class="alert alert-danger">
+        <strong>@Model.ErrorMessage</strong>
+        @if (Model.ProviderError is not null)
+        {
+            <div class="mt-2">DigiSign details:</div>
+            <pre class="mb-0 text-wrap">@Model.ProviderError</pre>
+        }
+    </div>
 }
 
 @if (Model.SuccessMessage is not null)
@@ -42,7 +49,7 @@
 }
 else
 {
-    <form method="post">
+    <form method="post" id="verificationForm">
         <div class="card mb-4">
             <div class="card-header"><strong>1. DigiSign environment</strong></div>
             <div class="card-body">
@@ -89,59 +96,149 @@ else
             <div class="card-header"><strong>3. Verification scenario</strong></div>
             <div class="card-body">
                 <label asp-for="Input.ScenarioId" class="form-label">Identify scenario ID</label>
-                <input asp-for="Input.ScenarioId" class="form-control" list="scenarioOptions" placeholder="Scenario UUID" />
-                <datalist id="scenarioOptions">
-                    @foreach (var scenario in Model.Scenarios)
-                    {
-                        <option value="@scenario.Id">@scenario.Name (@scenario.ApprovalMode)</option>
-                    }
-                </datalist>
-                <button type="submit" asp-page-handler="LoadScenarios" class="btn btn-outline-primary mt-3">Load available scenarios</button>
-
                 @if (Model.Scenarios.Count > 0)
                 {
-                    <div class="table-responsive mt-3">
-                        <table class="table table-sm">
-                            <thead><tr><th>Name</th><th>Approval mode</th><th>ID</th></tr></thead>
-                            <tbody>
-                            @foreach (var scenario in Model.Scenarios)
-                            {
-                                <tr><td>@scenario.Name</td><td>@scenario.ApprovalMode</td><td><code>@scenario.Id</code></td></tr>
-                            }
-                            </tbody>
-                        </table>
-                    </div>
+                    <select asp-for="Input.ScenarioId" class="form-select" id="scenarioId">
+                        <option value="">Select a loaded scenario</option>
+                        @foreach (var scenario in Model.Scenarios)
+                        {
+                            <option value="@scenario.Id" data-name="@scenario.Name" data-mode="@scenario.ApprovalMode">
+                                @scenario.Name (@scenario.ApprovalMode)
+                            </option>
+                        }
+                    </select>
                 }
+                else
+                {
+                    <input asp-for="Input.ScenarioId" class="form-control" id="scenarioId" placeholder="Scenario UUID" />
+                }
+                <button type="submit" asp-page-handler="LoadScenarios" class="btn btn-outline-primary mt-3">Load available scenarios</button>
+
+                <div id="selectedScenario" class="alert alert-secondary mt-3 mb-0" role="status">
+                    No verification scenario is selected.
+                </div>
             </div>
         </div>
 
         <div class="card mb-4">
             <div class="card-header"><strong>4. Identification settings</strong></div>
             <div class="card-body">
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label asp-for="Input.Name" class="form-label">Display name</label>
-                        <input asp-for="Input.Name" class="form-control" />
-                    </div>
-                    <div class="col-md-6">
-                        <label asp-for="Input.LinkExpiration" class="form-label">Start-link validity in minutes</label>
-                        <input asp-for="Input.LinkExpiration" type="number" min="0" max="10080" class="form-control" />
-                        <div class="form-text">0 uses the DigiSign default (5 minutes).</div>
-                    </div>
-                    <div class="col-12">
-                        <label asp-for="Input.RedirectUrl" class="form-label">Absolute redirect URL</label>
-                        <input asp-for="Input.RedirectUrl" class="form-control" />
+                <div>
+                    <label asp-for="Input.Name" class="form-label">Display name</label>
+                    <input asp-for="Input.Name" class="form-control" />
+                    <div class="form-text">A human-readable label for finding this verification in DigiSign administration.</div>
+                </div>
+
+                <button class="btn btn-link px-0 mt-3" type="button" data-bs-toggle="collapse"
+                        data-bs-target="#additionalOptions" aria-expanded="false" aria-controls="additionalOptions">
+                    Additional options
+                </button>
+
+                <div class="collapse" id="additionalOptions">
+                    <div class="border rounded p-3">
+                        <div class="mb-3">
+                            <label asp-for="Input.RedirectUrl" class="form-label">Absolute redirect URL</label>
+                            <input asp-for="Input.RedirectUrl" class="form-control" />
+                            <div class="form-text">
+                                HTTPS is the default. HTTP localhost is available only for exceptional local testing.
+                            </div>
+                            <div class="btn-group btn-group-sm mt-2" role="group" aria-label="Callback URL presets">
+                                <button type="button" class="btn btn-outline-secondary callback-preset"
+                                        data-url="https://localhost:7025/Callback">Use HTTPS localhost</button>
+                                <button type="button" class="btn btn-outline-secondary callback-preset"
+                                        data-url="http://localhost:5144/Callback">Use HTTP localhost</button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label asp-for="Input.LinkExpiration" class="form-label">Start-link validity in minutes</label>
+                            <input asp-for="Input.LinkExpiration" type="number" min="0" max="10080" class="form-control" />
+                            <div class="form-text">Keep 0 to use the DigiSign default, expected to be 5 minutes.</div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <button type="submit" asp-page-handler="Start" class="btn btn-primary btn-lg">Create and start verification</button>
+        <div id="readiness" class="alert alert-warning" role="status">
+            Complete the required settings before starting verification.
+        </div>
+
+        <button type="submit" asp-page-handler="Start" class="btn btn-primary btn-lg"
+                id="startVerification" disabled>Create and start verification</button>
     </form>
 
     @section Scripts {
         <script>
+            const form = document.getElementById('verificationForm');
             const token = document.getElementById('bearerToken');
+            const baseUrl = document.getElementById('Input_BaseUrl');
+            const accessKey = document.getElementById('Input_AccessKey');
+            const secretKey = document.getElementById('Input_SecretKey');
+            const scenario = document.getElementById('scenarioId');
+            const name = document.getElementById('Input_Name');
+            const redirectUrl = document.getElementById('Input_RedirectUrl');
+            const linkExpiration = document.getElementById('Input_LinkExpiration');
+            const selectedScenario = document.getElementById('selectedScenario');
+            const readiness = document.getElementById('readiness');
+            const startButton = document.getElementById('startVerification');
+
+            function isHttpUrl(value) {
+                try {
+                    const url = new URL(value);
+                    return url.protocol === 'https:' || url.protocol === 'http:';
+                } catch {
+                    return false;
+                }
+            }
+
+            function updateScenarioStatus() {
+                const scenarioId = scenario.value.trim();
+                if (!scenarioId) {
+                    selectedScenario.className = 'alert alert-secondary mt-3 mb-0';
+                    selectedScenario.textContent = 'No verification scenario is selected.';
+                    return;
+                }
+
+                const selectedOption = scenario.tagName === 'SELECT'
+                    ? scenario.options[scenario.selectedIndex]
+                    : null;
+                const description = selectedOption?.dataset.name
+                    ? `${selectedOption.dataset.name} (${selectedOption.dataset.mode || 'mode not specified'})`
+                    : 'Manually entered scenario';
+
+                selectedScenario.className = 'alert alert-success mt-3 mb-0';
+                selectedScenario.replaceChildren();
+                const label = document.createElement('strong');
+                label.textContent = 'Selected scenario:';
+                const id = document.createElement('code');
+                id.textContent = scenarioId;
+                selectedScenario.append(label, ` ${description}`, document.createElement('br'), id);
+            }
+
+            function updateReadiness() {
+                updateScenarioStatus();
+
+                const checks = [
+                    [isHttpUrl(baseUrl.value), 'DigiSign environment'],
+                    [token.value.trim() || (accessKey.value.trim() && secretKey.value.trim()), 'authentication'],
+                    [scenario.value.trim(), 'verification scenario'],
+                    [name.value.trim(), 'display name'],
+                    [isHttpUrl(redirectUrl.value), 'callback URL'],
+                    [Number.isInteger(Number(linkExpiration.value)) &&
+                        Number(linkExpiration.value) >= 0 &&
+                        Number(linkExpiration.value) <= 10080, 'link validity']
+                ];
+                const missing = checks.filter(check => !check[0]).map(check => check[1]);
+                const ready = missing.length === 0;
+
+                startButton.disabled = !ready;
+                readiness.className = ready ? 'alert alert-success' : 'alert alert-warning';
+                readiness.innerHTML = ready
+                    ? '<strong>Ready.</strong> Required settings are complete. You can create and start verification.'
+                    : `<strong>Not ready.</strong> Check: ${missing.join(', ')}.`;
+            }
+
             document.getElementById('toggleToken').addEventListener('click', event => {
                 token.type = token.type === 'password' ? 'text' : 'password';
                 event.target.textContent = token.type === 'password' ? 'Show' : 'Hide';
@@ -149,6 +246,26 @@ else
             document.getElementById('copyToken').addEventListener('click', async () => {
                 await navigator.clipboard.writeText(token.value);
             });
+            document.querySelectorAll('.callback-preset').forEach(button => {
+                button.addEventListener('click', () => {
+                    redirectUrl.value = button.dataset.url;
+                    updateReadiness();
+                });
+            });
+            [baseUrl, token, accessKey, secretKey, scenario, name, redirectUrl, linkExpiration]
+                .forEach(input => {
+                    input.addEventListener('input', updateReadiness);
+                    input.addEventListener('change', updateReadiness);
+                });
+
+            form.addEventListener('submit', event => {
+                if (event.submitter?.id === 'startVerification' && startButton.disabled) {
+                    event.preventDefault();
+                    updateReadiness();
+                }
+            });
+
+            updateReadiness();
         </script>
     }
 }

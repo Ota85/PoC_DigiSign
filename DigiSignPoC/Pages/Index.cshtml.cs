@@ -16,6 +16,7 @@ public class IndexModel(
     public InputModel Input { get; set; } = new();
 
     public string? ErrorMessage { get; private set; }
+    public string? ProviderError { get; private set; }
     public string? SuccessMessage { get; private set; }
     public string? IdentificationId { get; private set; }
     public string? VerificationUrl { get; private set; }
@@ -32,7 +33,7 @@ public class IndexModel(
         Input.ScenarioId = cfg["ScenarioId"] ?? "";
         Input.Name = cfg["Name"] ?? "PoC Verification";
         Input.RedirectUrl = cfg["RedirectUrl"]?.NullIfEmpty()
-                            ?? $"{Request.Scheme}://{Request.Host}/Callback";
+                            ?? "https://localhost:7025/Callback";
         Input.LinkExpiration = cfg.GetValue<int>("LinkExpiration");
     }
 
@@ -84,7 +85,17 @@ public class IndexModel(
                 item.TryGetProperty("approvalMode", out var mode) ? mode.GetString() ?? "" : ""));
         }
 
-        SuccessMessage = $"Loaded {Scenarios.Count} Identify scenario(s).";
+        if (Scenarios.Count == 1)
+        {
+            Input.ScenarioId = Scenarios[0].Id;
+            ModelState.Remove("Input.ScenarioId");
+            SuccessMessage = $"Loaded and selected scenario: {Scenarios[0].Name}.";
+        }
+        else
+        {
+            SuccessMessage = $"Loaded {Scenarios.Count} Identify scenario(s). Select one before starting verification.";
+        }
+
         Input.SecretKey = "";
         ModelState.Remove("Input.SecretKey");
     }
@@ -124,6 +135,7 @@ public class IndexModel(
             var error = await createResponse.Content.ReadAsStringAsync();
             logger.LogError("POST /api/identifications failed: {Status} {Body}", createResponse.StatusCode, error);
             ErrorMessage = $"Failed to create identification ({createResponse.StatusCode}).";
+            ProviderError = GetProviderError(error);
             return;
         }
 
@@ -165,6 +177,7 @@ public class IndexModel(
                 startResponse.StatusCode,
                 error);
             ErrorMessage = $"Identification {IdentificationId} was created, but it could not be started ({startResponse.StatusCode}).";
+            ProviderError = GetProviderError(error);
             return;
         }
 
@@ -215,9 +228,19 @@ public class IndexModel(
             return false;
         }
 
-        if (!Uri.TryCreate(Input.RedirectUrl, UriKind.Absolute, out _))
+        if (string.IsNullOrWhiteSpace(Input.Name))
         {
-            ErrorMessage = "Redirect URL must be an absolute URL.";
+            ErrorMessage = "Enter a display name for the identification.";
+            return false;
+        }
+
+        Input.ScenarioId = Input.ScenarioId.Trim();
+        Input.Name = Input.Name.Trim();
+
+        if (!Uri.TryCreate(Input.RedirectUrl, UriKind.Absolute, out var redirectUri) ||
+            (redirectUri.Scheme != Uri.UriSchemeHttps && redirectUri.Scheme != Uri.UriSchemeHttp))
+        {
+            ErrorMessage = "Redirect URL must be an absolute HTTP or HTTPS URL.";
             return false;
         }
 
@@ -296,6 +319,40 @@ public class IndexModel(
         SuccessMessage = "Bearer token obtained. It can now be used to load scenarios or start verification.";
         return true;
     }
+
+    private static string GetProviderError(string responseBody)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody))
+        {
+            return "DigiSign returned no error details.";
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            var root = document.RootElement;
+
+            foreach (var propertyName in new[] { "detail", "message", "error", "title" })
+            {
+                if (root.ValueKind == JsonValueKind.Object &&
+                    root.TryGetProperty(propertyName, out var value) &&
+                    value.ValueKind == JsonValueKind.String &&
+                    !string.IsNullOrWhiteSpace(value.GetString()))
+                {
+                    return value.GetString()!;
+                }
+            }
+
+            return LimitProviderError(root.GetRawText());
+        }
+        catch (JsonException)
+        {
+            return LimitProviderError(responseBody);
+        }
+    }
+
+    private static string LimitProviderError(string value) =>
+        value.Length <= 1500 ? value : $"{value[..1500]}...";
 
     private HttpClient CreateDigiSignClient(string? bearerToken = null)
     {

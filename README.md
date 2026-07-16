@@ -49,7 +49,7 @@ Non-secret defaults are stored in `DigiSignPoC/appsettings.json`:
 | `AccessKey` | optional | API access key used by the UI to obtain a bearer JWT. |
 | `ScenarioId` | yes | ID of the Identify scenario configured in DigiSign. |
 | `Name` | no | Display name of the identification. |
-| `RedirectUrl` | recommended | Absolute HTTPS callback URL. If empty, the app builds `/Callback` from the current request. |
+| `RedirectUrl` | recommended | Absolute callback URL. If empty, the local PoC defaults to `https://localhost:7025/Callback`. |
 | `LinkExpiration` | no | Start-link validity in minutes. `0` omits the field and uses the provider default of 5 minutes. |
 
 The `secretKey` is entered only in the UI and is not stored by the PoC. Do not commit real
@@ -78,9 +78,14 @@ Open `https://localhost:7025`. The UI supports the complete PoC flow:
 1. Select the DigiSign environment.
 2. Enter an existing bearer JWT, or enter `accessKey` and `secretKey` and select
    **Get bearer token**.
-3. Enter a scenario ID or select **Load available scenarios**.
-4. Review the identification settings.
+3. Select **Load available scenarios**. A single returned scenario is selected automatically;
+   otherwise select the intended scenario from the list and verify the green selection summary.
+4. Review the display name. The HTTPS callback and provider-default link expiration (`0`) are
+   available under **Additional options**.
 5. Select **Create and start verification**.
+
+The start button remains disabled until the required authentication, scenario, display name,
+callback URL, and link-expiration values are valid.
 
 The browser may block the automatic new tab. The result page always contains a fallback link to
 open DigiSign manually.
