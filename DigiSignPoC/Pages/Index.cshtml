@@ -140,13 +140,13 @@ else
                             <label asp-for="Input.RedirectUrl" class="form-label">Absolute redirect URL</label>
                             <input asp-for="Input.RedirectUrl" class="form-control" />
                             <div class="form-text">
-                                HTTPS is the default. HTTP localhost is available only for exceptional local testing.
+                                The public HTTPS address returns DigiSign to this locally running PoC through the reverse proxy.
                             </div>
                             <div class="btn-group btn-group-sm mt-2" role="group" aria-label="Callback URL presets">
                                 <button type="button" class="btn btn-outline-secondary callback-preset"
-                                        data-url="https://localhost:7025/Callback">Use HTTPS localhost</button>
+                                        data-url="https://sign.revolving.dev.linksoft.cz/">Use public callback</button>
                                 <button type="button" class="btn btn-outline-secondary callback-preset"
-                                        data-url="http://localhost:5144/Callback">Use HTTP localhost</button>
+                                        data-url="http://localhost:5000/Callback">Use HTTP localhost</button>
                             </div>
                         </div>
 

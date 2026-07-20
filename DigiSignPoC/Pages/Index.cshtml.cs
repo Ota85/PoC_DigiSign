@@ -33,7 +33,7 @@ public class IndexModel(
         Input.ScenarioId = cfg["ScenarioId"] ?? "";
         Input.Name = cfg["Name"] ?? "PoC Verification";
         Input.RedirectUrl = cfg["RedirectUrl"]?.NullIfEmpty()
-                            ?? "https://localhost:7025/Callback";
+                            ?? "https://sign.revolving.dev.linksoft.cz/";
         Input.LinkExpiration = cfg.GetValue<int>("LinkExpiration");
     }
 

@@ -36,7 +36,7 @@ Non-secret defaults are stored in `DigiSignPoC/appsettings.json`:
     "AccessKey": "",
     "ScenarioId": "",
     "Name": "PoC Verification",
-    "RedirectUrl": "",
+    "RedirectUrl": "https://sign.revolving.dev.linksoft.cz/",
     "LinkExpiration": 0
   }
 }
@@ -49,7 +49,7 @@ Non-secret defaults are stored in `DigiSignPoC/appsettings.json`:
 | `AccessKey` | optional | API access key used by the UI to obtain a bearer JWT. |
 | `ScenarioId` | yes | ID of the Identify scenario configured in DigiSign. |
 | `Name` | no | Display name of the identification. |
-| `RedirectUrl` | recommended | Absolute callback URL. If empty, the local PoC defaults to `https://localhost:7025/Callback`. |
+| `RedirectUrl` | recommended | Absolute callback URL. The default is `https://sign.revolving.dev.linksoft.cz/`. Requests to that host's root are handled by the PoC callback page. |
 | `LinkExpiration` | no | Start-link validity in minutes. `0` omits the field and uses the provider default of 5 minutes. |
 
 The `secretKey` is entered only in the UI and is not stored by the PoC. Do not commit real
@@ -60,7 +60,7 @@ cd DigiSignPoC
 dotnet user-secrets set "DigiSign:BearerToken" "<jwt>"
 dotnet user-secrets set "DigiSign:AccessKey" "<access-key>"
 dotnet user-secrets set "DigiSign:ScenarioId" "<scenario-id>"
-dotnet user-secrets set "DigiSign:RedirectUrl" "https://localhost:7025/Callback"
+dotnet user-secrets set "DigiSign:RedirectUrl" "https://sign.revolving.dev.linksoft.cz/"
 ```
 
 Configuration can also be supplied through environment variables such as
@@ -70,17 +70,17 @@ Configuration can also be supplied through environment variables such as
 
 ```powershell
 cd DigiSignPoC
-dotnet run --launch-profile https
+dotnet run --launch-profile http
 ```
 
-Open `https://localhost:7025`. The UI supports the complete PoC flow:
+Open `http://localhost:5000`. The UI supports the complete PoC flow:
 
 1. Select the DigiSign environment.
 2. Enter an existing bearer JWT, or enter `accessKey` and `secretKey` and select
    **Get bearer token**.
 3. Select **Load available scenarios**. A single returned scenario is selected automatically;
    otherwise select the intended scenario from the list and verify the green selection summary.
-4. Review the display name. The HTTPS callback and provider-default link expiration (`0`) are
+4. Review the display name. The public HTTPS callback and provider-default link expiration (`0`) are
    available under **Additional options**.
 5. Select **Create and start verification**.
 
@@ -101,7 +101,7 @@ Content-Type: application/json
 
 {
   "identifyScenario": "<scenario-id>",
-  "redirectUrl": "https://localhost:7025/Callback",
+  "redirectUrl": "https://sign.revolving.dev.linksoft.cz/",
   "name": "PoC Verification"
 }
 ```
