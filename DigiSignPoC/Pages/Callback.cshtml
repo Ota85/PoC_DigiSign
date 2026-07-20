@@ -12,40 +12,66 @@
 }
 else
 {
-    var alertClass = Model.ProviderStatus == "approved"
-        ? "alert-success"
-        : Model.ProviderStatus is "denied" or "cancelled" or "expired"
-            ? "alert-danger"
-            : "alert-warning";
+    var normalizedStatus = Model.ProviderStatus?.ToLowerInvariant();
+    var isApproved = normalizedStatus == "approved";
+    var isNegativeResult = normalizedStatus is "denied" or "rejected" or "cancelled" or "expired";
+    var alertClass = isApproved ? "alert-success" : isNegativeResult ? "alert-danger" : "alert-warning";
+    var resultHeading = isApproved
+        ? "Verification approved"
+        : isNegativeResult
+            ? "Verification not approved"
+            : "Verification awaiting a final result";
 
-    <div class="alert @alertClass">
-        <strong>Authoritative DigiSign status:</strong> @Model.ProviderStatus
+    <section aria-labelledby="verification-summary-heading">
+        <h2 class="h4" id="verification-summary-heading">Verification summary</h2>
+        <div class="alert @alertClass" role="status">
+            <h3 class="h5 alert-heading">@resultHeading</h3>
+            @if (isApproved)
+            {
+                <p class="mb-0">DigiSign approved the identity verification.</p>
+            }
+            else if (isNegativeResult)
+            {
+                <p class="mb-0">DigiSign did not approve the identity verification.</p>
+            }
+            else
+            {
+                <p class="mb-0">The verification is not in a final approved or rejected state yet.</p>
+            }
+            <hr />
+            <p class="mb-0"><strong>Authoritative DigiSign status:</strong> @Model.ProviderStatus</p>
+        </div>
+    </section>
+
+    <div class="card mb-4">
+        <div class="card-header"><strong>Verification details</strong></div>
+        <div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-3">Identification ID</dt>
+                <dd class="col-sm-9"><code>@Model.IdentificationId</code></dd>
+                @if (Model.ApprovalMode is not null)
+                {
+                    <dt class="col-sm-3">Approval mode</dt>
+                    <dd class="col-sm-9">@Model.ApprovalMode</dd>
+                }
+                @if (Model.CompletedAt is not null)
+                {
+                    <dt class="col-sm-3">Completed at</dt>
+                    <dd class="col-sm-9">@Model.CompletedAt</dd>
+                }
+                @if (Model.ApprovedAt is not null)
+                {
+                    <dt class="col-sm-3">Approved at</dt>
+                    <dd class="col-sm-9">@Model.ApprovedAt</dd>
+                }
+                @if (Model.DeniedAt is not null)
+                {
+                    <dt class="col-sm-3">Denied at</dt>
+                    <dd class="col-sm-9">@Model.DeniedAt</dd>
+                }
+            </dl>
+        </div>
     </div>
-
-    <dl class="row">
-        <dt class="col-sm-3">Identification ID</dt>
-        <dd class="col-sm-9"><code>@Model.IdentificationId</code></dd>
-        @if (Model.ApprovalMode is not null)
-        {
-            <dt class="col-sm-3">Approval mode</dt>
-            <dd class="col-sm-9">@Model.ApprovalMode</dd>
-        }
-        @if (Model.CompletedAt is not null)
-        {
-            <dt class="col-sm-3">Completed at</dt>
-            <dd class="col-sm-9">@Model.CompletedAt</dd>
-        }
-        @if (Model.ApprovedAt is not null)
-        {
-            <dt class="col-sm-3">Approved at</dt>
-            <dd class="col-sm-9">@Model.ApprovedAt</dd>
-        }
-        @if (Model.DeniedAt is not null)
-        {
-            <dt class="col-sm-3">Denied at</dt>
-            <dd class="col-sm-9">@Model.DeniedAt</dd>
-        }
-    </dl>
 
     <p>
         <strong>approved</strong> means DigiSign approved the identification.
