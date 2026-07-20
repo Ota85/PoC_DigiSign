@@ -29,7 +29,7 @@
     <div class="alert alert-success">
         <strong>Identification created and started.</strong>
         DigiSign should open in a new tab automatically.
-        If it does not, <a href="@Model.VerificationUrl" target="_blank" rel="noopener noreferrer">open DigiSign manually</a>.
+        If it does not, <a href="@Model.VerificationUrl" target="digisign-verification">open DigiSign manually</a>.
     </div>
 
     <dl class="row">
@@ -38,13 +38,29 @@
         <dt class="col-sm-3">Start URL valid to</dt>
         <dd class="col-sm-9">@Model.ValidTo</dd>
         <dt class="col-sm-3">Verification URL</dt>
-        <dd class="col-sm-9 text-break"><a href="@Model.VerificationUrl" target="_blank" rel="noopener noreferrer">@Model.VerificationUrl</a></dd>
+        <dd class="col-sm-9 text-break"><a href="@Model.VerificationUrl" target="digisign-verification">@Model.VerificationUrl</a></dd>
     </dl>
 
-    <a class="btn btn-secondary" asp-page="/Index">Start another verification</a>
+    <button class="btn btn-primary" type="button" id="backToSettings">Back to verification settings</button>
+    <a class="btn btn-outline-secondary" asp-page="/Index">Reset verification settings</a>
 
     @section Scripts {
-        <script>window.open(@Json.Serialize(Model.VerificationUrl), '_blank', 'noopener,noreferrer');</script>
+        <script>
+            document.getElementById('backToSettings').addEventListener('click', () => {
+                if (window.history.length > 1) {
+                    window.history.back();
+                } else {
+                    window.location.href = @Json.Serialize(Url.Page("/Index"));
+                }
+            });
+
+            const digisignTab = window.open(
+                @Json.Serialize(Model.VerificationUrl),
+                'digisign-verification');
+            if (digisignTab) {
+                digisignTab.opener = null;
+            }
+        </script>
     }
 }
 else
@@ -160,8 +176,11 @@ else
             Complete the required settings before starting verification.
         </div>
 
-        <button type="submit" asp-page-handler="Start" class="btn btn-primary btn-lg"
-                id="startVerification" disabled>Create and start verification</button>
+        <a asp-page="/Preparing" target="digisign-verification"
+           class="btn btn-primary btn-lg disabled" id="startVerification" aria-disabled="true">
+            Create and start verification
+        </a>
+        <button type="submit" asp-page-handler="Start" id="startVerificationSubmitter" hidden></button>
     </form>
 
     @section Scripts {
@@ -178,6 +197,7 @@ else
             const selectedScenario = document.getElementById('selectedScenario');
             const readiness = document.getElementById('readiness');
             const startButton = document.getElementById('startVerification');
+            const startSubmitter = document.getElementById('startVerificationSubmitter');
 
             function isHttpUrl(value) {
                 try {
@@ -228,7 +248,8 @@ else
                 const missing = checks.filter(check => !check[0]).map(check => check[1]);
                 const ready = missing.length === 0;
 
-                startButton.disabled = !ready;
+                startButton.classList.toggle('disabled', !ready);
+                startButton.setAttribute('aria-disabled', String(!ready));
                 readiness.className = ready ? 'alert alert-success' : 'alert alert-warning';
                 readiness.innerHTML = ready
                     ? '<strong>Ready.</strong> Required settings are complete. You can create and start verification.'
@@ -254,10 +275,22 @@ else
                     input.addEventListener('change', updateReadiness);
                 });
 
-            form.addEventListener('submit', event => {
-                if (event.submitter?.id === 'startVerification' && startButton.disabled) {
+            startButton.addEventListener('click', event => {
+                if (startButton.getAttribute('aria-disabled') === 'true') {
                     event.preventDefault();
                     updateReadiness();
+                    return;
+                }
+
+                window.setTimeout(() => form.requestSubmit(startSubmitter), 0);
+            });
+
+            form.addEventListener('submit', event => {
+                if (event.submitter?.id === 'startVerificationSubmitter') {
+                    if (startButton.getAttribute('aria-disabled') === 'true') {
+                        event.preventDefault();
+                        updateReadiness();
+                    }
                 }
             });
 
