@@ -6,97 +6,152 @@ namespace DigiSignPoC.Pages;
 
 public class CallbackModel(IHttpClientFactory httpClientFactory, ILogger<CallbackModel> logger) : PageModel
 {
-    public string? IdentificationId { get; private set; }
-    public string? ProviderStatus { get; private set; }
-    public string? ApprovalMode { get; private set; }
-    public string? CompletedAt { get; private set; }
-    public string? ApprovedAt { get; private set; }
-    public string? DeniedAt { get; private set; }
-    public int? ProviderHttpStatus { get; private set; }
-    public string? ProviderResponseJson { get; private set; }
+    public string? FlowId { get; private set; }
     public string? ErrorMessage { get; private set; }
-    public bool IsPopupCallback { get; private set; }
-    public Dictionary<string, string> QueryParams { get; private set; } = [];
+    public bool CompletionRecorded { get; private set; }
 
-    public async Task OnGetAsync()
+    public async Task OnGetAsync(string? pocFlow)
     {
-        IsPopupCallback = Request.Query["pocPopup"] == "1";
+        FlowId = pocFlow;
+        var session = HttpContext.Session;
+        var activeFlowId = session.GetString(DigiSignSession.FlowIdKey);
 
-        foreach (var (key, value) in Request.Query)
+        if (string.IsNullOrWhiteSpace(FlowId) ||
+            string.IsNullOrWhiteSpace(activeFlowId) ||
+            !string.Equals(FlowId, activeFlowId, StringComparison.Ordinal))
         {
-            QueryParams[key] = value.ToString();
-        }
-
-        IdentificationId = HttpContext.Session.GetString("DigiSign:IdentificationId");
-        var baseUrl = HttpContext.Session.GetString("DigiSign:BaseUrl");
-        var bearerToken = HttpContext.Session.GetString("DigiSign:BearerToken");
-
-        if (string.IsNullOrWhiteSpace(IdentificationId) ||
-            string.IsNullOrWhiteSpace(baseUrl) ||
-            string.IsNullOrWhiteSpace(bearerToken))
-        {
-            ErrorMessage = "The PoC session does not contain a started identification. Start a new verification from the home page.";
+            ErrorMessage = "The callback does not match the active verification. Return to the PoC and start a new verification.";
             return;
         }
 
+        var identificationId = session.GetString(DigiSignSession.IdentificationIdKey);
+        var baseUrl = session.GetString(DigiSignSession.BaseUrlKey);
+        var bearerToken = session.GetString(DigiSignSession.BearerTokenKey);
+        var queryParams = Request.Query.ToDictionary(pair => pair.Key, pair => pair.Value.ToString());
+
+        if (string.IsNullOrWhiteSpace(identificationId) ||
+            string.IsNullOrWhiteSpace(baseUrl) ||
+            string.IsNullOrWhiteSpace(bearerToken))
+        {
+            ErrorMessage = "The PoC session does not contain the active DigiSign verification.";
+            return;
+        }
+
+        var completion = await LoadCompletionAsync(
+            FlowId,
+            identificationId,
+            baseUrl,
+            bearerToken,
+            queryParams);
+
+        DigiSignSession.SetCompletion(session, completion);
+        CompletionRecorded = true;
+
+        logger.LogInformation(
+            "Identification {IdentificationId} callback stored for flow {FlowId} with status {Status}.",
+            identificationId,
+            FlowId,
+            completion.ProviderStatus);
+    }
+
+    private async Task<DigiSignCompletion> LoadCompletionAsync(
+        string flowId,
+        string identificationId,
+        string baseUrl,
+        string bearerToken,
+        Dictionary<string, string> queryParams)
+    {
         var http = httpClientFactory.CreateClient("DigiSign");
         http.BaseAddress = new Uri($"{baseUrl.TrimEnd('/')}/");
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
 
-        HttpResponseMessage response;
         try
         {
-            response = await http.GetAsync($"api/identifications/{IdentificationId}");
+            using var response = await http.GetAsync($"api/identifications/{identificationId}");
+            var responseBody = await response.Content.ReadAsStringAsync();
+            var formattedResponse = FormatProviderResponse(responseBody);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return CreateCompletion(
+                    flowId,
+                    identificationId,
+                    queryParams,
+                    providerHttpStatus: (int)response.StatusCode,
+                    providerResponseJson: formattedResponse,
+                    errorMessage: $"DigiSign returned {response.StatusCode} while loading the authoritative identification result.");
+            }
+
+            try
+            {
+                using var document = JsonDocument.Parse(responseBody);
+                var root = document.RootElement;
+                var approvalMode = root.TryGetProperty("scenarioVersion", out var scenarioVersion) &&
+                                   scenarioVersion.ValueKind == JsonValueKind.Object &&
+                                   scenarioVersion.TryGetProperty("approvalMode", out var approvalModeElement)
+                    ? approvalModeElement.GetString()
+                    : null;
+
+                return CreateCompletion(
+                    flowId,
+                    identificationId,
+                    queryParams,
+                    providerStatus: GetOptionalString(root, "status"),
+                    approvalMode: approvalMode,
+                    completedAt: GetOptionalString(root, "completedAt"),
+                    approvedAt: GetOptionalString(root, "approvedAt"),
+                    deniedAt: GetOptionalString(root, "deniedAt"),
+                    providerHttpStatus: (int)response.StatusCode,
+                    providerResponseJson: formattedResponse);
+            }
+            catch (JsonException exception)
+            {
+                logger.LogError(exception, "DigiSign returned invalid JSON for identification {IdentificationId}.", identificationId);
+                return CreateCompletion(
+                    flowId,
+                    identificationId,
+                    queryParams,
+                    providerHttpStatus: (int)response.StatusCode,
+                    providerResponseJson: formattedResponse,
+                    errorMessage: "DigiSign returned a successful response, but its result was not valid JSON.");
+            }
         }
         catch (HttpRequestException exception)
         {
-            logger.LogError(exception, "Loading DigiSign identification {IdentificationId} failed.", IdentificationId);
-            ErrorMessage = "DigiSign API could not be reached while loading the identification result.";
-            return;
+            logger.LogError(exception, "Loading DigiSign identification {IdentificationId} failed.", identificationId);
+            return CreateCompletion(
+                flowId,
+                identificationId,
+                queryParams,
+                errorMessage: "DigiSign API could not be reached while loading the identification result.");
         }
-        var responseBody = await response.Content.ReadAsStringAsync();
-        ProviderHttpStatus = (int)response.StatusCode;
-        ProviderResponseJson = FormatProviderResponse(responseBody);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            ErrorMessage = $"DigiSign returned {response.StatusCode} while loading the authoritative identification result.";
-            return;
-        }
-
-        JsonDocument document;
-        try
-        {
-            document = JsonDocument.Parse(responseBody);
-        }
-        catch (JsonException exception)
-        {
-            logger.LogError(exception, "DigiSign returned invalid JSON for identification {IdentificationId}.", IdentificationId);
-            ErrorMessage = "DigiSign returned a successful response, but its result was not valid JSON.";
-            return;
-        }
-
-        using (document)
-        {
-            var root = document.RootElement;
-            ProviderStatus = root.TryGetProperty("status", out var status) ? status.GetString() : null;
-            CompletedAt = GetOptionalString(root, "completedAt");
-            ApprovedAt = GetOptionalString(root, "approvedAt");
-            DeniedAt = GetOptionalString(root, "deniedAt");
-
-            if (root.TryGetProperty("scenarioVersion", out var scenarioVersion) &&
-                scenarioVersion.ValueKind == JsonValueKind.Object &&
-                scenarioVersion.TryGetProperty("approvalMode", out var approvalMode))
-            {
-                ApprovalMode = approvalMode.GetString();
-            }
-        }
-
-        logger.LogInformation(
-            "Identification {IdentificationId} callback processed with authoritative status {Status}.",
-            IdentificationId,
-            ProviderStatus);
     }
+
+    private static DigiSignCompletion CreateCompletion(
+        string flowId,
+        string identificationId,
+        Dictionary<string, string> queryParams,
+        string? providerStatus = null,
+        string? approvalMode = null,
+        string? completedAt = null,
+        string? approvedAt = null,
+        string? deniedAt = null,
+        int? providerHttpStatus = null,
+        string? providerResponseJson = null,
+        string? errorMessage = null) =>
+        new(
+            flowId,
+            identificationId,
+            DateTimeOffset.UtcNow,
+            providerStatus,
+            approvalMode,
+            completedAt,
+            approvedAt,
+            deniedAt,
+            providerHttpStatus,
+            providerResponseJson,
+            errorMessage,
+            queryParams);
 
     private static string? GetOptionalString(JsonElement root, string propertyName) =>
         root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String

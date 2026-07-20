@@ -20,6 +20,7 @@ public class IndexModel(
     public string? SuccessMessage { get; private set; }
     public string? IdentificationId { get; private set; }
     public string? VerificationUrl { get; private set; }
+    public string? FlowId { get; private set; }
     public string? ValidTo { get; private set; }
     public string? TokenExpiresAt { get; private set; }
     public List<ScenarioOption> Scenarios { get; private set; } = [];
@@ -35,6 +36,37 @@ public class IndexModel(
         Input.RedirectUrl = cfg["RedirectUrl"]?.NullIfEmpty()
                             ?? "https://sign.revolving.dev.linksoft.cz/Callback";
         Input.LinkExpiration = cfg.GetValue<int>("LinkExpiration");
+    }
+
+    public IActionResult OnGetVerificationState(string? flowId)
+    {
+        Response.Headers.CacheControl = "no-store, no-cache";
+
+        var activeFlowId = HttpContext.Session.GetString(DigiSignSession.FlowIdKey);
+        if (string.IsNullOrWhiteSpace(flowId) ||
+            string.IsNullOrWhiteSpace(activeFlowId) ||
+            !string.Equals(flowId, activeFlowId, StringComparison.Ordinal))
+        {
+            return new JsonResult(new
+            {
+                completed = false,
+                error = "This verification is no longer active."
+            })
+            {
+                StatusCode = StatusCodes.Status409Conflict
+            };
+        }
+
+        var completion = DigiSignSession.GetCompletion(HttpContext.Session);
+        var isCompleted = completion is not null &&
+                          string.Equals(completion.FlowId, flowId, StringComparison.Ordinal);
+
+        return new JsonResult(new
+        {
+            completed = isCompleted,
+            receivedAt = isCompleted ? completion!.ReceivedAt : (DateTimeOffset?)null,
+            resultUrl = isCompleted ? Url.Page("/Result", new { flowId }) : null
+        });
     }
 
     public async Task OnPostGetTokenAsync()
@@ -108,11 +140,12 @@ public class IndexModel(
         }
 
         var http = CreateDigiSignClient(Input.BearerToken);
+        var flowId = Guid.NewGuid().ToString("N");
 
         var createBody = JsonSerializer.Serialize(new
         {
             identifyScenario = Input.ScenarioId,
-            redirectUrl = AddPopupMarker(Input.RedirectUrl),
+            redirectUrl = AddFlowMarker(Input.RedirectUrl, flowId),
             name = Input.Name
         });
 
@@ -193,9 +226,12 @@ public class IndexModel(
             return;
         }
 
-        HttpContext.Session.SetString("DigiSign:BaseUrl", Input.BaseUrl);
-        HttpContext.Session.SetString("DigiSign:BearerToken", Input.BearerToken!);
-        HttpContext.Session.SetString("DigiSign:IdentificationId", IdentificationId);
+        FlowId = flowId;
+        HttpContext.Session.SetString(DigiSignSession.BaseUrlKey, Input.BaseUrl);
+        HttpContext.Session.SetString(DigiSignSession.BearerTokenKey, Input.BearerToken!);
+        HttpContext.Session.SetString(DigiSignSession.IdentificationIdKey, IdentificationId);
+        HttpContext.Session.SetString(DigiSignSession.FlowIdKey, FlowId);
+        DigiSignSession.ClearCompletion(HttpContext.Session);
 
         Input.SecretKey = "";
         ModelState.Remove("Input.SecretKey");
@@ -354,13 +390,13 @@ public class IndexModel(
     private static string LimitProviderError(string value) =>
         value.Length <= 1500 ? value : $"{value[..1500]}...";
 
-    private static string AddPopupMarker(string redirectUrl)
+    private static string AddFlowMarker(string redirectUrl, string flowId)
     {
         var uri = new UriBuilder(redirectUrl);
         var existingQuery = uri.Query.TrimStart('?');
         uri.Query = string.IsNullOrEmpty(existingQuery)
-            ? "pocPopup=1"
-            : $"{existingQuery}&pocPopup=1";
+            ? $"pocFlow={Uri.EscapeDataString(flowId)}"
+            : $"{existingQuery}&pocFlow={Uri.EscapeDataString(flowId)}";
         return uri.Uri.AbsoluteUri;
     }
 

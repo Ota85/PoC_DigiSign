@@ -37,7 +37,7 @@
         <dt class="col-sm-3">Start URL valid to</dt>
         <dd class="col-sm-9">@Model.ValidTo</dd>
         <dt class="col-sm-3">Verification URL</dt>
-        <dd class="col-sm-9 text-break"><a href="@Model.VerificationUrl" target="digisign-verification">@Model.VerificationUrl</a></dd>
+        <dd class="col-sm-9 text-break"><a href="@Model.VerificationUrl" target="digisign-verification" class="verification-link">@Model.VerificationUrl</a></dd>
     </dl>
 
     <button class="btn btn-primary" type="button" id="openDigiSign">Open DigiSign verification</button>
@@ -45,44 +45,171 @@
     <a class="btn btn-outline-secondary" asp-page="/Index">Reset verification settings</a>
     <div class="alert alert-warning mt-3" id="popupWarning" role="alert" hidden>
         The DigiSign popup was blocked. Allow popups for this site, then try again, or
-        <a href="@Model.VerificationUrl" target="digisign-verification">open DigiSign manually</a>.
+        <a href="@Model.VerificationUrl" target="digisign-verification" class="verification-link">open DigiSign manually</a>.
+    </div>
+    <div class="alert alert-info mt-3" id="verificationProgress" role="status" hidden>
+        <strong>Verification in progress.</strong>
+        <span id="verificationProgressText">Waiting for DigiSign to return the completed response.</span>
+        <div class="small mt-1">Elapsed time: <span id="verificationElapsed">00:00</span></div>
+    </div>
+    <div class="alert alert-danger mt-3" id="verificationTimeout" role="alert" hidden>
+        <strong>No callback was received within 15 minutes.</strong>
+        The automatic check has stopped. You can reopen DigiSign or start a new verification.
+        <button class="btn btn-sm btn-outline-danger ms-2" type="button" id="checkAgain">Check again</button>
     </div>
 
     @section Scripts {
         <script>
-            const completionUrl = @Json.Serialize(Url.Page("/Callback"));
             const verificationUrl = @Json.Serialize(Model.VerificationUrl);
+            const flowId = @Json.Serialize(Model.FlowId);
+            const verificationStateUrl = @Json.Serialize(Url.Page("/Index", "VerificationState", new { flowId = Model.FlowId }));
+            const resultUrl = @Json.Serialize(Url.Page("/Result", new { flowId = Model.FlowId }));
             const popupWarning = document.getElementById('popupWarning');
+            const verificationProgress = document.getElementById('verificationProgress');
+            const verificationProgressText = document.getElementById('verificationProgressText');
+            const verificationElapsed = document.getElementById('verificationElapsed');
+            const verificationTimeout = document.getElementById('verificationTimeout');
+            const pollingPeriodMs = 1000;
+            const pollingTimeoutMs = 15 * 60 * 1000;
+            let verificationPopup = null;
+            let pollingStartedAt = null;
+            let pollingTimer = null;
+            let pollingFinished = false;
+            let pollingRequestInFlight = false;
 
-            function showVerificationResult() {
-                window.location.href = completionUrl;
+            function formatElapsed(milliseconds) {
+                const totalSeconds = Math.floor(milliseconds / 1000);
+                const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+                const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+                return `${minutes}:${seconds}`;
+            }
+
+            function stopPolling() {
+                if (pollingTimer !== null) {
+                    window.clearTimeout(pollingTimer);
+                    pollingTimer = null;
+                }
+            }
+
+            function showVerificationResult(url = resultUrl) {
+                if (pollingFinished) {
+                    return;
+                }
+
+                pollingFinished = true;
+                stopPolling();
+                verificationProgress.className = 'alert alert-success mt-3';
+                verificationProgressText.textContent = 'DigiSign returned the response. Opening the result.';
+
+                try {
+                    if (verificationPopup && !verificationPopup.closed) {
+                        verificationPopup.close();
+                    }
+                } catch {
+                    // The callback page also attempts to close its own popup.
+                }
+
+                window.location.assign(url);
+            }
+
+            function stopAfterTimeout() {
+                stopPolling();
+                pollingStartedAt = null;
+                verificationProgress.hidden = true;
+                verificationTimeout.hidden = false;
+            }
+
+            async function checkVerificationState() {
+                stopPolling();
+                if (pollingFinished || pollingStartedAt === null || pollingRequestInFlight) {
+                    return;
+                }
+
+                pollingRequestInFlight = true;
+                const elapsed = Date.now() - pollingStartedAt;
+                verificationElapsed.textContent = formatElapsed(elapsed);
+                if (elapsed >= pollingTimeoutMs) {
+                    pollingRequestInFlight = false;
+                    stopAfterTimeout();
+                    return;
+                }
+
+                try {
+                    const response = await fetch(verificationStateUrl, {
+                        cache: 'no-store',
+                        headers: { 'Accept': 'application/json' }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Local status check failed with HTTP ${response.status}.`);
+                    }
+
+                    const state = await response.json();
+                    if (state.completed) {
+                        pollingRequestInFlight = false;
+                        showVerificationResult(state.resultUrl || resultUrl);
+                        return;
+                    }
+
+                    verificationProgressText.textContent = verificationPopup?.closed
+                        ? 'The popup is closed. Waiting briefly in case DigiSign already returned the response.'
+                        : 'Waiting for DigiSign to return the completed response.';
+                } catch {
+                    verificationProgressText.textContent = 'The local status check failed. Retrying automatically.';
+                }
+
+                pollingRequestInFlight = false;
+                pollingTimer = window.setTimeout(checkVerificationState, pollingPeriodMs);
+            }
+
+            function startPolling() {
+                if (pollingFinished || pollingStartedAt !== null) {
+                    return;
+                }
+
+                pollingStartedAt = Date.now();
+                verificationTimeout.hidden = true;
+                verificationProgress.hidden = false;
+                verificationProgress.className = 'alert alert-info mt-3';
+                verificationProgressText.textContent = 'Waiting for DigiSign to return the completed response.';
+                verificationElapsed.textContent = '00:00';
+                checkVerificationState();
             }
 
             window.addEventListener('message', event => {
                 if (event.origin === window.location.origin &&
-                    event.data?.type === 'digisign-verification-complete') {
-                    showVerificationResult();
+                    event.data?.type === 'digisign-verification-complete' &&
+                    event.data?.flowId === flowId) {
+                    checkVerificationState();
                 }
             });
 
             if ('BroadcastChannel' in window) {
                 const completionChannel = new BroadcastChannel('digisign-verification');
                 completionChannel.addEventListener('message', event => {
-                    if (event.data?.type === 'digisign-verification-complete') {
-                        showVerificationResult();
+                    if (event.data?.type === 'digisign-verification-complete' &&
+                        event.data?.flowId === flowId) {
+                        checkVerificationState();
                     }
                 });
             }
 
             document.getElementById('openDigiSign').addEventListener('click', () => {
-                const popup = window.open(
+                verificationPopup = window.open(
                     verificationUrl,
                     'digisign-verification',
                     'popup=yes,width=1100,height=800,resizable=yes,scrollbars=yes');
 
-                popupWarning.hidden = popup !== null;
-                popup?.focus();
+                popupWarning.hidden = verificationPopup !== null;
+                verificationPopup?.focus();
+                startPolling();
             });
+
+            document.querySelectorAll('.verification-link').forEach(link => {
+                link.addEventListener('click', startPolling);
+            });
+
+            document.getElementById('checkAgain').addEventListener('click', startPolling);
 
             document.getElementById('backToSettings').addEventListener('click', () => {
                 if (window.history.length > 1) {

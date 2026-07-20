@@ -1,0 +1,117 @@
+@page
+@model ResultModel
+@{
+    ViewData["Title"] = "Verification Result";
+}
+
+<h1>Verification Result</h1>
+
+@if (Model.ErrorMessage is not null)
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+else
+{
+    var normalizedStatus = Model.ProviderStatus?.ToLowerInvariant();
+    var isApproved = normalizedStatus == "approved";
+    var isNegativeResult = normalizedStatus is "denied" or "rejected" or "cancelled" or "expired";
+    var alertClass = isApproved ? "alert-success" : isNegativeResult ? "alert-danger" : "alert-warning";
+    var resultHeading = isApproved
+        ? "Verification approved"
+        : isNegativeResult
+            ? "Verification not approved"
+            : "Verification awaiting a final result";
+
+    <section aria-labelledby="verification-summary-heading">
+        <h2 class="h4" id="verification-summary-heading">Verification summary</h2>
+        <div class="alert @alertClass" role="status">
+            <h3 class="h5 alert-heading">@resultHeading</h3>
+            @if (isApproved)
+            {
+                <p class="mb-0">DigiSign approved the identity verification.</p>
+            }
+            else if (isNegativeResult)
+            {
+                <p class="mb-0">DigiSign did not approve the identity verification.</p>
+            }
+            else
+            {
+                <p class="mb-0">The verification is not in a final approved or rejected state yet.</p>
+            }
+            <hr />
+            <p class="mb-0"><strong>Authoritative DigiSign status:</strong> @Model.ProviderStatus</p>
+        </div>
+    </section>
+
+    <div class="card mb-4">
+        <div class="card-header"><strong>Verification details</strong></div>
+        <div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-3">Identification ID</dt>
+                <dd class="col-sm-9"><code>@Model.IdentificationId</code></dd>
+                @if (Model.ApprovalMode is not null)
+                {
+                    <dt class="col-sm-3">Approval mode</dt>
+                    <dd class="col-sm-9">@Model.ApprovalMode</dd>
+                }
+                @if (Model.CompletedAt is not null)
+                {
+                    <dt class="col-sm-3">Completed at</dt>
+                    <dd class="col-sm-9">@Model.CompletedAt</dd>
+                }
+                @if (Model.ApprovedAt is not null)
+                {
+                    <dt class="col-sm-3">Approved at</dt>
+                    <dd class="col-sm-9">@Model.ApprovedAt</dd>
+                }
+                @if (Model.DeniedAt is not null)
+                {
+                    <dt class="col-sm-3">Denied at</dt>
+                    <dd class="col-sm-9">@Model.DeniedAt</dd>
+                }
+            </dl>
+        </div>
+    </div>
+
+    <p>
+        <strong>approved</strong> means DigiSign approved the identification.
+        <strong>completed</strong> only means that the user submitted the verification.
+        <strong>for_review</strong> requires an administrator decision.
+    </p>
+}
+
+@if (Model.ProviderResponseJson is not null)
+{
+    <section class="mt-4" aria-labelledby="complete-response-heading">
+        <h2 class="h4" id="complete-response-heading">Complete DigiSign API response</h2>
+        <p class="text-muted">
+            This is the complete authoritative payload returned by DigiSign.
+            @if (Model.ProviderHttpStatus is not null)
+            {
+                <span>HTTP status: @Model.ProviderHttpStatus.</span>
+            }
+            It may contain sensitive verification data and is shown here for this PoC.
+        </p>
+        <pre class="border rounded bg-light p-3 overflow-auto"><code>@Model.ProviderResponseJson</code></pre>
+    </section>
+}
+
+<h2 class="h4 mt-4">Browser callback parameters</h2>
+<p class="text-muted">These parameters are displayed for technical analysis and are not used as the trusted result.</p>
+
+@if (Model.QueryParams.Count > 0)
+{
+    <dl class="row">
+        @foreach (var (key, value) in Model.QueryParams)
+        {
+            <dt class="col-sm-3">@key</dt>
+            <dd class="col-sm-9">@value</dd>
+        }
+    </dl>
+}
+else
+{
+    <p>No query parameters were returned.</p>
+}
+
+<a class="btn btn-primary" asp-page="/Index">Start a new verification</a>

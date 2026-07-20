@@ -7,10 +7,10 @@ process:
 
 1. Create an identification with `POST /api/identifications`.
 2. Start it with `POST /api/identifications/{id}/start`.
-3. Open the returned `identifyUrl` in a new browser tab.
+3. Open the returned `identifyUrl` in a popup window.
 4. Let DigiSign redirect the browser back to `/Callback`.
-5. Retrieve the authoritative identification status from DigiSign.
-6. Display the result and returned query parameters for technical analysis.
+5. Store the callback and complete authoritative DigiSign response in the local PoC session.
+6. Let the main PoC page detect the stored result and display it together with the returned query parameters.
 
 This is a PoC, not a production identity-verification application.
 
@@ -89,8 +89,10 @@ callback URL, and link-expiration values are valid.
 
 After the identification is created, the PoC displays an intermediate information page. Select
 **Open DigiSign verification** to request a popup-sized browser window while keeping the PoC page
-visible. When DigiSign returns, the popup notifies the PoC page, which displays the structured
-result and complete API response; the popup then closes. Browser settings may open a tab instead.
+visible. The main page checks local PoC session state once per second for up to 15 minutes; it does
+not poll DigiSign. When DigiSign returns, the callback retrieves and stores the complete provider
+response once. The popup closes automatically and the main page displays the structured result and
+complete API response. Browser settings may open a tab instead.
 
 ## Request and response flow
 
@@ -137,8 +139,11 @@ The user opens `identifyUrl` in a requested popup window; the PoC does not use a
 ### 3. Return
 
 DigiSign redirects the browser to the configured `redirectUrl`. The PoC stores the identification
-ID and bearer JWT in its in-memory session, calls `GET /api/identifications/{id}`, and displays the
-authoritative DigiSign status together with any browser query parameters.
+ID, flow correlation ID, and bearer JWT in its in-memory session. The popup callback calls
+`GET /api/identifications/{id}` once and stores the authoritative result in the same session. The
+main page polls only the local session state, closes the popup when possible, and displays the
+stored result together with any browser query parameters. Polling stops after 15 minutes if no
+callback arrives.
 
 Only the API status is treated as the provider result. Browser callback parameters are displayed
 for technical analysis only.
@@ -151,7 +156,7 @@ for technical analysis only.
 | AK-02 | Creates the identification and displays its provider ID. |
 | AK-03 | Starts the identification and reads `identifyUrl`. |
 | AK-04 | Opens `identifyUrl` in a requested popup after an intermediate confirmation page; no iframe. |
-| AK-05 | `/Callback` displays the authoritative API status, complete provider response, and browser query parameters. |
+| AK-05 | The main `/Result` page displays the authoritative API status, complete provider response, and browser query parameters stored by `/Callback`. |
 | AK-06 | Optional `LinkExpiration`; omitted for the five-minute provider default. |
 | AK-07 | Credentials and environment values come from configuration/secrets, not source code. |
 | AK-08 | This README records the flow, configuration, limitations, and production questions. |
