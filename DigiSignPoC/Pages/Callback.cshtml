@@ -54,6 +54,22 @@ else
     </p>
 }
 
+@if (Model.ProviderResponseJson is not null)
+{
+    <section class="mt-4" aria-labelledby="complete-response-heading">
+        <h2 class="h4" id="complete-response-heading">Complete DigiSign API response</h2>
+        <p class="text-muted">
+            This is the complete authoritative payload returned by DigiSign.
+            @if (Model.ProviderHttpStatus is not null)
+            {
+                <span>HTTP status: @Model.ProviderHttpStatus.</span>
+            }
+            It may contain sensitive verification data and is shown here for this PoC.
+        </p>
+        <pre class="border rounded bg-light p-3 overflow-auto"><code>@Model.ProviderResponseJson</code></pre>
+    </section>
+}
+
 <h2 class="h4 mt-4">Browser callback parameters</h2>
 <p class="text-muted">These parameters are displayed for technical analysis and are not used as the trusted result.</p>
 
@@ -74,3 +90,24 @@ else
 
 <a class="btn btn-outline-primary" asp-page="/Callback">Refresh DigiSign status</a>
 <a class="btn btn-primary" asp-page="/Index">Start a new verification</a>
+
+@if (Model.IsPopupCallback)
+{
+    @section Scripts {
+        <script>
+            const completionMessage = { type: 'digisign-verification-complete' };
+
+            if (window.opener) {
+                window.opener.postMessage(completionMessage, window.location.origin);
+            }
+
+            if ('BroadcastChannel' in window) {
+                const completionChannel = new BroadcastChannel('digisign-verification');
+                completionChannel.postMessage(completionMessage);
+                completionChannel.close();
+            }
+
+            window.setTimeout(() => window.close(), 750);
+        </script>
+    }
+}

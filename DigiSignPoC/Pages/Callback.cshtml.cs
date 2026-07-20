@@ -12,11 +12,16 @@ public class CallbackModel(IHttpClientFactory httpClientFactory, ILogger<Callbac
     public string? CompletedAt { get; private set; }
     public string? ApprovedAt { get; private set; }
     public string? DeniedAt { get; private set; }
+    public int? ProviderHttpStatus { get; private set; }
+    public string? ProviderResponseJson { get; private set; }
     public string? ErrorMessage { get; private set; }
+    public bool IsPopupCallback { get; private set; }
     public Dictionary<string, string> QueryParams { get; private set; } = [];
 
     public async Task OnGetAsync()
     {
+        IsPopupCallback = Request.Query["pocPopup"] == "1";
+
         foreach (var (key, value) in Request.Query)
         {
             QueryParams[key] = value.ToString();
@@ -49,24 +54,42 @@ public class CallbackModel(IHttpClientFactory httpClientFactory, ILogger<Callbac
             ErrorMessage = "DigiSign API could not be reached while loading the identification result.";
             return;
         }
+        var responseBody = await response.Content.ReadAsStringAsync();
+        ProviderHttpStatus = (int)response.StatusCode;
+        ProviderResponseJson = FormatProviderResponse(responseBody);
+
         if (!response.IsSuccessStatusCode)
         {
             ErrorMessage = $"DigiSign returned {response.StatusCode} while loading the authoritative identification result.";
             return;
         }
 
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var root = document.RootElement;
-        ProviderStatus = root.TryGetProperty("status", out var status) ? status.GetString() : null;
-        CompletedAt = GetOptionalString(root, "completedAt");
-        ApprovedAt = GetOptionalString(root, "approvedAt");
-        DeniedAt = GetOptionalString(root, "deniedAt");
-
-        if (root.TryGetProperty("scenarioVersion", out var scenarioVersion) &&
-            scenarioVersion.ValueKind == JsonValueKind.Object &&
-            scenarioVersion.TryGetProperty("approvalMode", out var approvalMode))
+        JsonDocument document;
+        try
         {
-            ApprovalMode = approvalMode.GetString();
+            document = JsonDocument.Parse(responseBody);
+        }
+        catch (JsonException exception)
+        {
+            logger.LogError(exception, "DigiSign returned invalid JSON for identification {IdentificationId}.", IdentificationId);
+            ErrorMessage = "DigiSign returned a successful response, but its result was not valid JSON.";
+            return;
+        }
+
+        using (document)
+        {
+            var root = document.RootElement;
+            ProviderStatus = root.TryGetProperty("status", out var status) ? status.GetString() : null;
+            CompletedAt = GetOptionalString(root, "completedAt");
+            ApprovedAt = GetOptionalString(root, "approvedAt");
+            DeniedAt = GetOptionalString(root, "deniedAt");
+
+            if (root.TryGetProperty("scenarioVersion", out var scenarioVersion) &&
+                scenarioVersion.ValueKind == JsonValueKind.Object &&
+                scenarioVersion.TryGetProperty("approvalMode", out var approvalMode))
+            {
+                ApprovalMode = approvalMode.GetString();
+            }
         }
 
         logger.LogInformation(
@@ -79,4 +102,24 @@ public class CallbackModel(IHttpClientFactory httpClientFactory, ILogger<Callbac
         root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
+
+    private static string FormatProviderResponse(string responseBody)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody))
+        {
+            return "(empty response body)";
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            return JsonSerializer.Serialize(
+                document.RootElement,
+                new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch (JsonException)
+        {
+            return responseBody;
+        }
+    }
 }

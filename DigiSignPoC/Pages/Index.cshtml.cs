@@ -33,7 +33,7 @@ public class IndexModel(
         Input.ScenarioId = cfg["ScenarioId"] ?? "";
         Input.Name = cfg["Name"] ?? "PoC Verification";
         Input.RedirectUrl = cfg["RedirectUrl"]?.NullIfEmpty()
-                            ?? "https://sign.revolving.dev.linksoft.cz/";
+                            ?? "https://sign.revolving.dev.linksoft.cz/Callback";
         Input.LinkExpiration = cfg.GetValue<int>("LinkExpiration");
     }
 
@@ -112,7 +112,7 @@ public class IndexModel(
         var createBody = JsonSerializer.Serialize(new
         {
             identifyScenario = Input.ScenarioId,
-            redirectUrl = Input.RedirectUrl,
+            redirectUrl = AddPopupMarker(Input.RedirectUrl),
             name = Input.Name
         });
 
@@ -353,6 +353,16 @@ public class IndexModel(
 
     private static string LimitProviderError(string value) =>
         value.Length <= 1500 ? value : $"{value[..1500]}...";
+
+    private static string AddPopupMarker(string redirectUrl)
+    {
+        var uri = new UriBuilder(redirectUrl);
+        var existingQuery = uri.Query.TrimStart('?');
+        uri.Query = string.IsNullOrEmpty(existingQuery)
+            ? "pocPopup=1"
+            : $"{existingQuery}&pocPopup=1";
+        return uri.Uri.AbsoluteUri;
+    }
 
     private HttpClient CreateDigiSignClient(string? bearerToken = null)
     {

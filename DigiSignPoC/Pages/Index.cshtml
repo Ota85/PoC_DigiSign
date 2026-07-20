@@ -28,8 +28,7 @@
 {
     <div class="alert alert-success">
         <strong>Identification created and started.</strong>
-        DigiSign should open in a new tab automatically.
-        If it does not, <a href="@Model.VerificationUrl" target="digisign-verification">open DigiSign manually</a>.
+        Review the information below, then open DigiSign in a popup. This page will remain visible.
     </div>
 
     <dl class="row">
@@ -41,11 +40,50 @@
         <dd class="col-sm-9 text-break"><a href="@Model.VerificationUrl" target="digisign-verification">@Model.VerificationUrl</a></dd>
     </dl>
 
-    <button class="btn btn-primary" type="button" id="backToSettings">Back to verification settings</button>
+    <button class="btn btn-primary" type="button" id="openDigiSign">Open DigiSign verification</button>
+    <button class="btn btn-outline-secondary" type="button" id="backToSettings">Back to verification settings</button>
     <a class="btn btn-outline-secondary" asp-page="/Index">Reset verification settings</a>
+    <div class="alert alert-warning mt-3" id="popupWarning" role="alert" hidden>
+        The DigiSign popup was blocked. Allow popups for this site, then try again, or
+        <a href="@Model.VerificationUrl" target="digisign-verification">open DigiSign manually</a>.
+    </div>
 
     @section Scripts {
         <script>
+            const completionUrl = @Json.Serialize(Url.Page("/Callback"));
+            const verificationUrl = @Json.Serialize(Model.VerificationUrl);
+            const popupWarning = document.getElementById('popupWarning');
+
+            function showVerificationResult() {
+                window.location.href = completionUrl;
+            }
+
+            window.addEventListener('message', event => {
+                if (event.origin === window.location.origin &&
+                    event.data?.type === 'digisign-verification-complete') {
+                    showVerificationResult();
+                }
+            });
+
+            if ('BroadcastChannel' in window) {
+                const completionChannel = new BroadcastChannel('digisign-verification');
+                completionChannel.addEventListener('message', event => {
+                    if (event.data?.type === 'digisign-verification-complete') {
+                        showVerificationResult();
+                    }
+                });
+            }
+
+            document.getElementById('openDigiSign').addEventListener('click', () => {
+                const popup = window.open(
+                    verificationUrl,
+                    'digisign-verification',
+                    'popup=yes,width=1100,height=800,resizable=yes,scrollbars=yes');
+
+                popupWarning.hidden = popup !== null;
+                popup?.focus();
+            });
+
             document.getElementById('backToSettings').addEventListener('click', () => {
                 if (window.history.length > 1) {
                     window.history.back();
@@ -54,12 +92,6 @@
                 }
             });
 
-            const digisignTab = window.open(
-                @Json.Serialize(Model.VerificationUrl),
-                'digisign-verification');
-            if (digisignTab) {
-                digisignTab.opener = null;
-            }
         </script>
     }
 }
@@ -156,7 +188,7 @@ else
                             </div>
                             <div class="btn-group btn-group-sm mt-2" role="group" aria-label="Callback URL presets">
                                 <button type="button" class="btn btn-outline-secondary callback-preset"
-                                        data-url="https://sign.revolving.dev.linksoft.cz/">Use public callback</button>
+                                        data-url="https://sign.revolving.dev.linksoft.cz/Callback">Use public callback</button>
                                 <button type="button" class="btn btn-outline-secondary callback-preset"
                                         data-url="http://localhost:5000/Callback">Use HTTP localhost</button>
                             </div>
@@ -176,11 +208,8 @@ else
             Complete the required settings before starting verification.
         </div>
 
-        <a asp-page="/Preparing" target="digisign-verification"
-           class="btn btn-primary btn-lg disabled" id="startVerification" aria-disabled="true">
-            Create and start verification
-        </a>
-        <button type="submit" asp-page-handler="Start" id="startVerificationSubmitter" hidden></button>
+        <button type="submit" asp-page-handler="Start" class="btn btn-primary btn-lg"
+                id="startVerification" disabled>Create and start verification</button>
     </form>
 
     @section Scripts {
@@ -197,7 +226,6 @@ else
             const selectedScenario = document.getElementById('selectedScenario');
             const readiness = document.getElementById('readiness');
             const startButton = document.getElementById('startVerification');
-            const startSubmitter = document.getElementById('startVerificationSubmitter');
 
             function isHttpUrl(value) {
                 try {
@@ -248,8 +276,7 @@ else
                 const missing = checks.filter(check => !check[0]).map(check => check[1]);
                 const ready = missing.length === 0;
 
-                startButton.classList.toggle('disabled', !ready);
-                startButton.setAttribute('aria-disabled', String(!ready));
+                startButton.disabled = !ready;
                 readiness.className = ready ? 'alert alert-success' : 'alert alert-warning';
                 readiness.innerHTML = ready
                     ? '<strong>Ready.</strong> Required settings are complete. You can create and start verification.'
@@ -275,22 +302,10 @@ else
                     input.addEventListener('change', updateReadiness);
                 });
 
-            startButton.addEventListener('click', event => {
-                if (startButton.getAttribute('aria-disabled') === 'true') {
+            form.addEventListener('submit', event => {
+                if (event.submitter?.id === 'startVerification' && startButton.disabled) {
                     event.preventDefault();
                     updateReadiness();
-                    return;
-                }
-
-                window.setTimeout(() => form.requestSubmit(startSubmitter), 0);
-            });
-
-            form.addEventListener('submit', event => {
-                if (event.submitter?.id === 'startVerificationSubmitter') {
-                    if (startButton.getAttribute('aria-disabled') === 'true') {
-                        event.preventDefault();
-                        updateReadiness();
-                    }
                 }
             });
 

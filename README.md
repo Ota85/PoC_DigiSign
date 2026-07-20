@@ -36,7 +36,7 @@ Non-secret defaults are stored in `DigiSignPoC/appsettings.json`:
     "AccessKey": "",
     "ScenarioId": "",
     "Name": "PoC Verification",
-    "RedirectUrl": "https://sign.revolving.dev.linksoft.cz/",
+    "RedirectUrl": "https://sign.revolving.dev.linksoft.cz/Callback",
     "LinkExpiration": 0
   }
 }
@@ -49,7 +49,7 @@ Non-secret defaults are stored in `DigiSignPoC/appsettings.json`:
 | `AccessKey` | optional | API access key used by the UI to obtain a bearer JWT. |
 | `ScenarioId` | yes | ID of the Identify scenario configured in DigiSign. |
 | `Name` | no | Display name of the identification. |
-| `RedirectUrl` | recommended | Absolute callback URL. The default is `https://sign.revolving.dev.linksoft.cz/`. Requests to that host's root are handled by the PoC callback page. |
+| `RedirectUrl` | recommended | Absolute callback URL. The default is `https://sign.revolving.dev.linksoft.cz/Callback`, which redirects back to the local callback page. |
 | `LinkExpiration` | no | Start-link validity in minutes. `0` omits the field and uses the provider default of 5 minutes. |
 
 The `secretKey` is entered only in the UI and is not stored by the PoC. Do not commit real
@@ -60,7 +60,7 @@ cd DigiSignPoC
 dotnet user-secrets set "DigiSign:BearerToken" "<jwt>"
 dotnet user-secrets set "DigiSign:AccessKey" "<access-key>"
 dotnet user-secrets set "DigiSign:ScenarioId" "<scenario-id>"
-dotnet user-secrets set "DigiSign:RedirectUrl" "https://sign.revolving.dev.linksoft.cz/"
+dotnet user-secrets set "DigiSign:RedirectUrl" "https://sign.revolving.dev.linksoft.cz/Callback"
 ```
 
 Configuration can also be supplied through environment variables such as
@@ -87,8 +87,10 @@ Open `http://localhost:5000`. The UI supports the complete PoC flow:
 The start button remains disabled until the required authentication, scenario, display name,
 callback URL, and link-expiration values are valid.
 
-The browser may block the automatic new tab. The result page always contains a fallback link to
-open DigiSign manually.
+After the identification is created, the PoC displays an intermediate information page. Select
+**Open DigiSign verification** to request a popup-sized browser window while keeping the PoC page
+visible. When DigiSign returns, the popup notifies the PoC page, which displays the structured
+result and complete API response; the popup then closes. Browser settings may open a tab instead.
 
 ## Request and response flow
 
@@ -101,7 +103,7 @@ Content-Type: application/json
 
 {
   "identifyScenario": "<scenario-id>",
-  "redirectUrl": "https://sign.revolving.dev.linksoft.cz/",
+  "redirectUrl": "https://sign.revolving.dev.linksoft.cz/Callback",
   "name": "PoC Verification"
 }
 ```
@@ -129,8 +131,8 @@ With a configured longer validity:
 }
 ```
 
-The response contains `identifyUrl` and `validTo`. The PoC opens `identifyUrl` in a new tab and
-does not use an iframe.
+The response contains `identifyUrl` and `validTo`. The PoC displays both on an intermediate page.
+The user opens `identifyUrl` in a requested popup window; the PoC does not use an iframe.
 
 ### 3. Return
 
@@ -148,8 +150,8 @@ for technical analysis only.
 | AK-01 | `ScenarioId`, absolute `RedirectUrl`, and `Name` are configurable. |
 | AK-02 | Creates the identification and displays its provider ID. |
 | AK-03 | Starts the identification and reads `identifyUrl`. |
-| AK-04 | Opens `identifyUrl` in a new tab with a manual fallback; no iframe. |
-| AK-05 | `/Callback` displays the authoritative API status and browser query parameters. |
+| AK-04 | Opens `identifyUrl` in a requested popup after an intermediate confirmation page; no iframe. |
+| AK-05 | `/Callback` displays the authoritative API status, complete provider response, and browser query parameters. |
 | AK-06 | Optional `LinkExpiration`; omitted for the five-minute provider default. |
 | AK-07 | Credentials and environment values come from configuration/secrets, not source code. |
 | AK-08 | This README records the flow, configuration, limitations, and production questions. |
