@@ -1,30 +1,64 @@
-# PoC_DigiSign
+# DigiSign integration PoC
 
-Small ASP.NET Core Proof of Concept for the standalone DigiSign Identify verification flow.
+Small ASP.NET Core application for exercising two independent DigiSign journeys:
 
-The purpose is to verify the real provider journey before designing a production business
-process:
+1. standalone identity verification with **DigiSign Identify**;
+2. PDF document signing with either **Bank iD SIGN** or a **simple signature protected by a new DigiSign Identify verification**.
 
-1. Create an identification with `POST /api/identifications`.
-2. Start it with `POST /api/identifications/{id}/start`.
-3. Open the returned `identifyUrl` in a popup window.
-4. Let DigiSign redirect the browser back to `/Callback`.
-5. Store the callback and complete authoritative DigiSign response in the local PoC session.
-6. Let the main PoC page detect the stored result and display it together with the returned query parameters.
+The landing page lets the user choose the workflow. Authentication is configured once and shared by
+both workflows in server-side application memory.
 
-This is a PoC, not a production identity-verification application.
+This is a technical PoC, not a production identity or document-signing application.
+
+## User documentation
+
+- [Document Signing User Manual (PDF)](output/pdf/DigiSign-PoC-Signing-User-Manual.pdf) - controlled,
+  publication-ready operator and recipient guidance.
+- [Document Signing User Manual (editable source)](docs/signing-user-guide.md) - maintained content
+  for Bank iD SIGN and DigiSign Identify signing.
 
 ## Prerequisites
 
 - .NET 10 SDK
-- DigiSign Identify sandbox or production account
-- Bearer JWT, or a DigiSign `accessKey` and `secretKey`
-- Configured DigiSign Identify scenario
+- DigiSign staging or production account with the API module
+- DigiSign `accessKey` and `secretKey`, or an existing bearer JWT
+- DigiSign Identify module and at least one Identify scenario
+- Bank iD SIGN enabled in the DigiSign workspace to test the Bank iD signing option
+- a public HTTPS callback address that forwards to the running application
 
-The selected scenario controls whether DigiSign requests identity documents, a selfie, liveness
-checks, and automatic or manual approval.
+The free staging environment can be requested from DigiSign support. Staging API keys and data are
+separate from production.
 
-## Configuration
+## Run
+
+```powershell
+cd DigiSignPoC
+dotnet run --launch-profile http
+```
+
+Open `http://localhost:5000`.
+
+## Shared authentication
+
+Open **Credentials** and enter:
+
+- a DigiSign API base URL;
+- either a bearer JWT;
+- or `accessKey` and `secretKey`.
+
+When API keys are supplied, the PoC exchanges them at `POST /api/auth-token`, caches the token, and
+automatically refreshes it shortly before expiration.
+
+Credentials and tokens:
+
+- are held only in the ASP.NET process through `IMemoryCache`;
+- are never stored in the browser session;
+- are shared by all users of this PoC process;
+- disappear when the application restarts.
+
+This deliberately simple model is suitable only for a single-user PoC. A production application
+must use a secret store, scoped credentials, persistent workflow state, and appropriate access
+controls.
 
 Non-secret defaults are stored in `DigiSignPoC/appsettings.json`:
 
@@ -37,134 +71,139 @@ Non-secret defaults are stored in `DigiSignPoC/appsettings.json`:
     "ScenarioId": "",
     "Name": "PoC Verification",
     "RedirectUrl": "https://sign.revolving.dev.linksoft.cz/Callback",
+    "SigningRedirectUrl": "https://sign.revolving.dev.linksoft.cz/SigningCallback",
     "LinkExpiration": 0
   }
 }
 ```
 
-| Key | Required | Description |
-|---|---|---|
-| `BaseUrl` | yes | DigiSign API URL. Use the staging URL for sandbox testing. |
-| `BearerToken` | optional | Existing bearer JWT used by the DigiSign API. |
-| `AccessKey` | optional | API access key used by the UI to obtain a bearer JWT. |
-| `ScenarioId` | yes | ID of the Identify scenario configured in DigiSign. |
-| `Name` | no | Display name of the identification. |
-| `RedirectUrl` | recommended | Absolute callback URL. The default is `https://sign.revolving.dev.linksoft.cz/Callback`, which redirects back to the local callback page. |
-| `LinkExpiration` | no | Start-link validity in minutes. `0` omits the field and uses the provider default of 5 minutes. |
-
-The `secretKey` is entered only in the UI and is not stored by the PoC. Do not commit real
-credentials. Existing values may still be supplied through User Secrets:
+Secrets may still be supplied through .NET User Secrets:
 
 ```powershell
 cd DigiSignPoC
-dotnet user-secrets set "DigiSign:BearerToken" "<jwt>"
 dotnet user-secrets set "DigiSign:AccessKey" "<access-key>"
-dotnet user-secrets set "DigiSign:ScenarioId" "<scenario-id>"
-dotnet user-secrets set "DigiSign:RedirectUrl" "https://sign.revolving.dev.linksoft.cz/Callback"
+dotnet user-secrets set "DigiSign:SecretKey" "<secret-key>"
 ```
 
-Configuration can also be supplied through environment variables such as
-`DigiSign__BearerToken` and `DigiSign__ScenarioId`.
+## Workflow 1: standalone Identify
 
-## Run
+1. Open **Identify**.
+2. Load or enter an Identify scenario.
+3. Create an identification:
 
-```powershell
-cd DigiSignPoC
-dotnet run --launch-profile http
-```
+   ```http
+   POST /api/identifications
+   ```
 
-Open `http://localhost:5000`. The UI supports the complete PoC flow:
+4. Start it:
 
-1. Select the DigiSign environment.
-2. Enter an existing bearer JWT, or enter `accessKey` and `secretKey` and select
-   **Get bearer token**.
-3. Select **Load available scenarios**. A single returned scenario is selected automatically;
-   otherwise select the intended scenario from the list and verify the green selection summary.
-4. Review the display name. The public HTTPS callback and provider-default link expiration (`0`) are
-   available under **Additional options**.
-5. Select **Create and start verification**.
+   ```http
+   POST /api/identifications/{identificationId}/start
+   ```
 
-The start button remains disabled until the required authentication, scenario, display name,
-callback URL, and link-expiration values are valid.
+5. Open the returned `identifyUrl` in a popup.
+6. DigiSign returns to `/Callback`.
+7. The callback loads the authoritative result:
 
-After the identification is created, the PoC displays an intermediate information page. Select
-**Open DigiSign verification** to request a popup-sized browser window while keeping the PoC page
-visible. The main page checks local PoC session state once per second for up to 15 minutes; it does
-not poll DigiSign. When DigiSign returns, the callback retrieves and stores the complete provider
-response once. The popup closes automatically and the main page displays the structured result and
-complete API response. Browser settings may open a tab instead.
+   ```http
+   GET /api/identifications/{identificationId}
+   ```
 
-## Request and response flow
+8. The main page displays the status and complete provider response.
 
-### 1. Create identification
+The callback query string is displayed for diagnostics but is not treated as the authoritative
+verification result.
 
-```http
-POST /api/identifications
-Authorization: Bearer <token>
-Content-Type: application/json
+## Workflow 2: document signing
 
-{
-  "identifyScenario": "<scenario-id>",
-  "redirectUrl": "https://sign.revolving.dev.linksoft.cz/Callback",
-  "name": "PoC Verification"
-}
-```
+1. Open **Sign document**.
+2. Select a PDF, enter signer data, and select:
 
-The response contains the provider identification `id`, which the PoC displays and uses in the
-next request.
+   - **Bank iD SIGN**; or
+   - **DigiSign Identify + simple signature**.
 
-### 2. Start identification
+3. The PoC creates the signing resources in this order:
 
-With the provider-default five-minute link validity:
+   ```text
+   POST /api/envelopes
+   POST /api/files
+   POST /api/envelopes/{envelopeId}/documents
+   POST /api/envelopes/{envelopeId}/recipients
+   POST /api/envelopes/{envelopeId}/tags
+   POST /api/envelopes/{envelopeId}/send
+   POST /api/envelopes/{envelopeId}/recipients/{recipientId}/embed
+   ```
 
-```http
-POST /api/identifications/{id}/start
-Authorization: Bearer <token>
-Content-Type: application/json
+4. The embedded URL opens in a popup.
+5. DigiSign returns to `/SigningCallback`.
+6. The callback loads the authoritative envelope:
 
-{}
-```
+   ```http
+   GET /api/envelopes/{envelopeId}
+   ```
 
-With a configured longer validity:
+7. When the status is `completed`, the result page can download the signed PDF and audit log:
+
+   ```http
+   GET /api/envelopes/{envelopeId}/download
+   ```
+
+### Bank iD SIGN recipient
+
+The Bank iD path configures the recipient with `signatureType = bank_id_sign`. Availability depends
+on the DigiSign workspace and the signer having a supported Bank iD.
+
+### Identify-protected recipient
+
+The Identify path configures:
 
 ```json
 {
-  "linkExpiration": 15
+  "signatureType": "simple",
+  "authenticationOnSignature": "identify",
+  "identifyScenario": "<scenario-id>",
+  "identifyValidatedFields": ["name"]
 }
 ```
 
-The response contains `identifyUrl` and `validTo`. The PoC displays both on an intermediate page.
-The user opens `identifyUrl` in a requested popup window; the PoC does not use an iframe.
+This intentionally creates a new envelope-linked identification. DigiSign's public API does not
+document attaching the standalone identification from workflow 1 to a later envelope.
 
-### 3. Return
+### Invitation delivery
 
-DigiSign redirects the browser to the configured `redirectUrl`. The PoC stores the identification
-ID, flow correlation ID, and bearer JWT in its in-memory session. The popup callback calls
-`GET /api/identifications/{id}` once and stores the authoritative result in the same session. The
-main page polls only the local session state, closes the popup when possible, and displays the
-stored result together with any browser query parameters. Polling stops after 15 minutes if no
-callback arrives.
+By default, DigiSign may also send its normal invitation email. The UI can request
+`channelForSigner = none` so that only the embedded PoC URL is used, but the corresponding advanced
+option must first be enabled in the DigiSign workspace.
 
-Only the API status is treated as the provider result. Browser callback parameters are displayed
-for technical analysis only.
+### Signature placement
 
-## Acceptance criteria coverage
+The PoC places one signature tag using a page number and X/Y coordinates. Coordinates are PDF
+points measured from the top-left corner, with 72 points per inch.
 
-| Criterion | PoC implementation |
-|---|---|
-| AK-01 | `ScenarioId`, absolute `RedirectUrl`, and `Name` are configurable. |
-| AK-02 | Creates the identification and displays its provider ID. |
-| AK-03 | Starts the identification and reads `identifyUrl`. |
-| AK-04 | Opens `identifyUrl` in a requested popup after an intermediate confirmation page; no iframe. |
-| AK-05 | The main `/Result` page displays the authoritative API status, complete provider response, and browser query parameters stored by `/Callback`. |
-| AK-06 | Optional `LinkExpiration`; omitted for the five-minute provider default. |
-| AK-07 | Credentials and environment values come from configuration/secrets, not source code. |
-| AK-08 | This README records the flow, configuration, limitations, and production questions. |
+For generated production documents, a unique text placeholder or an envelope template is usually
+more reliable than user-entered coordinates.
 
-## Open questions for production
+## PoC limitations and production work
 
-- Correlate the identification ID with the authenticated application user.
-- Decide which statuses permit the loan process to continue (`approved`, `for_review`, and so on).
-- Persist only the required result data and define retention rules for identity information.
-- Consider signed DigiSign webhooks for reliable asynchronous status updates.
-- Confirm production authentication/token renewal and the final scenario configuration.
+- Authentication is global, in memory, and intended for one PoC operator.
+- Workflow state and results are stored in ASP.NET in-memory session.
+- Only one active Identify flow and one active signing flow are retained per browser session.
+- Only PDF upload and one signer/signature field are implemented.
+- The callback depends on the same browser session and is not a reliable asynchronous completion
+  mechanism.
+- Production should process signed and idempotent DigiSign webhooks, especially
+  `recipientSigned`, `envelopeCompleted`, decline, cancellation, and expiration events.
+- Production must persist correlations among application user, identification, envelope, recipient,
+  and document.
+- File validation, malware scanning, size policy, retention, deletion, authorization, audit access,
+  and GDPR rules remain production responsibilities.
+- The staging environment uses non-valid signing certificates and non-qualified timestamps.
+
+## DigiSign documentation
+
+- [Basic REST API envelope flow](https://help.digisign.org/cs/articles/9766040-zakladni-pouziti-rest-api)
+- [Embedded signing](https://help.digisign.org/cs/articles/9842671-embedovani-podpisu)
+- [Recipient verification and signature types](https://help.digisign.org/cs/articles/9925242-nastaveni-prijemcu-typu-podpisu-a-podpisoveho-workflow)
+- [DigiSign Identify in an envelope](https://help.digisign.org/cs/articles/11992663-pouziti-digisign-identify-scenare-pro-overeni-prijemce-v-obalce)
+- [Webhook technical specification](https://help.digisign.org/cs/articles/9766606-webhooky-technicka-specifikace-a-sprava-pres-api)
+- [OpenAPI documentation](https://api.digisign.org/api/docs)

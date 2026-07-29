@@ -1,0 +1,274 @@
+@page
+@model SigningModel
+@{
+    ViewData["Title"] = "Document signing";
+}
+
+<h1>Document signing</h1>
+<p class="lead">Create a DigiSign envelope and complete an embedded signing journey.</p>
+
+<div class="alert @(Model.Authentication.IsConfigured ? "alert-success" : "alert-warning")">
+    <strong>Shared authentication: @(Model.Authentication.IsConfigured ? "configured" : "not configured")</strong>
+    <span class="ms-2"><code>@Model.Authentication.BaseUrl</code></span>
+    <a class="btn btn-sm btn-outline-secondary ms-2" asp-page="/Credentials">Manage credentials</a>
+</div>
+
+@if (Model.ErrorMessage is not null)
+{
+    <div class="alert alert-danger">
+        <strong>@Model.ErrorMessage</strong>
+        @if (Model.ProviderError is not null)
+        {
+            <pre class="mb-0 mt-2 text-wrap">@Model.ProviderError</pre>
+        }
+        @if (Model.EnvelopeId is not null)
+        {
+            <div class="mt-2">Partially created envelope: <code>@Model.EnvelopeId</code></div>
+        }
+    </div>
+}
+
+@if (Model.SuccessMessage is not null)
+{
+    <div class="alert alert-success">@Model.SuccessMessage</div>
+}
+
+@if (Model.SigningUrl is not null)
+{
+    <div class="alert alert-success">
+        <strong>The envelope is ready.</strong>
+        Open DigiSign to complete the selected signing method.
+    </div>
+
+    <dl class="row">
+        <dt class="col-sm-3">Envelope ID</dt>
+        <dd class="col-sm-9"><code>@Model.EnvelopeId</code></dd>
+        <dt class="col-sm-3">Document ID</dt>
+        <dd class="col-sm-9"><code>@Model.DocumentId</code></dd>
+        <dt class="col-sm-3">Recipient ID</dt>
+        <dd class="col-sm-9"><code>@Model.RecipientId</code></dd>
+    </dl>
+
+    <button class="btn btn-primary" type="button" id="openDigiSign">Open DigiSign signing</button>
+    <a class="btn btn-outline-secondary" asp-page="/Signing">Start over</a>
+
+    <div class="alert alert-warning mt-3" id="popupWarning" hidden>
+        The popup was blocked.
+        <a href="@Model.SigningUrl" target="digisign-signing" class="signing-link">Open DigiSign manually</a>.
+    </div>
+    <div class="alert alert-info mt-3" id="signingProgress" hidden>
+        <strong>Signing in progress.</strong>
+        <span id="progressText">Waiting for DigiSign to return.</span>
+        <div class="small mt-1">Elapsed: <span id="elapsed">00:00</span></div>
+    </div>
+
+    @section Scripts {
+        <script>
+            const signingUrl = @Json.Serialize(Model.SigningUrl);
+            const flowId = @Json.Serialize(Model.FlowId);
+            const stateUrl = @Json.Serialize(Url.Page("/Signing", "SigningState", new { flowId = Model.FlowId }));
+            const resultUrl = @Json.Serialize(Url.Page("/SigningResult", new { flowId = Model.FlowId }));
+            let popup = null;
+            let startedAt = null;
+
+            function elapsedText(milliseconds) {
+                const seconds = Math.floor(milliseconds / 1000);
+                return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
+            }
+
+            async function poll() {
+                if (startedAt === null) return;
+                const elapsed = Date.now() - startedAt;
+                document.getElementById('elapsed').textContent = elapsedText(elapsed);
+                if (elapsed >= 30 * 60 * 1000) {
+                    document.getElementById('progressText').textContent = 'Timed out after 30 minutes.';
+                    return;
+                }
+
+                try {
+                    const response = await fetch(stateUrl, { cache: 'no-store', headers: { Accept: 'application/json' } });
+                    if (response.ok) {
+                        const state = await response.json();
+                        if (state.completed) {
+                            try { popup?.close(); } catch {}
+                            window.location.assign(state.resultUrl || resultUrl);
+                            return;
+                        }
+                    }
+                } catch {
+                    document.getElementById('progressText').textContent = 'Local status check failed; retrying.';
+                }
+
+                window.setTimeout(poll, 1000);
+            }
+
+            function startPolling() {
+                if (startedAt !== null) return;
+                startedAt = Date.now();
+                document.getElementById('signingProgress').hidden = false;
+                poll();
+            }
+
+            window.addEventListener('message', event => {
+                if (event.origin === window.location.origin &&
+                    event.data?.type === 'digisign-signing-complete' &&
+                    event.data?.flowId === flowId) {
+                    poll();
+                }
+            });
+
+            document.getElementById('openDigiSign').addEventListener('click', () => {
+                popup = window.open(
+                    signingUrl,
+                    'digisign-signing',
+                    'popup=yes,width=1100,height=800,resizable=yes,scrollbars=yes');
+                document.getElementById('popupWarning').hidden = popup !== null;
+                popup?.focus();
+                startPolling();
+            });
+        </script>
+    }
+}
+else
+{
+    <form method="post" enctype="multipart/form-data" id="signingForm">
+        <div class="card mb-4">
+            <div class="card-header"><strong>1. Document and envelope</strong></div>
+            <div class="card-body">
+                <label asp-for="Input.Document" class="form-label">PDF document</label>
+                <input asp-for="Input.Document" type="file" accept="application/pdf,.pdf" class="form-control mb-3" />
+
+                <label asp-for="Input.EnvelopeName" class="form-label">Envelope name</label>
+                <input asp-for="Input.EnvelopeName" class="form-control mb-3" />
+
+                <label asp-for="Input.EmailBody" class="form-label">Message to signer</label>
+                <textarea asp-for="Input.EmailBody" class="form-control" rows="3"></textarea>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><strong>2. Signer</strong></div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label asp-for="Input.SignerName" class="form-label">Full name</label>
+                        <input asp-for="Input.SignerName" class="form-control" />
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Input.SignerEmail" class="form-label">Email</label>
+                        <input asp-for="Input.SignerEmail" type="email" class="form-control" />
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Input.SignerMobile" class="form-label">Mobile number</label>
+                        <input asp-for="Input.SignerMobile" class="form-control" placeholder="+420..." />
+                        <div class="form-text">Optional unless required by the configured provider flow.</div>
+                    </div>
+                </div>
+                <div class="form-check mt-3">
+                    <input asp-for="Input.SuppressInvitationEmail" class="form-check-input" />
+                    <label asp-for="Input.SuppressInvitationEmail" class="form-check-label">
+                        Suppress DigiSign's invitation email and use only the embedded PoC link
+                    </label>
+                    <div class="form-text">
+                        This requires the corresponding advanced option to be enabled in the DigiSign workspace.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><strong>3. Signing method</strong></div>
+            <div class="card-body">
+                <div class="form-check mb-3">
+                    <input asp-for="Input.SigningMethod" class="form-check-input signing-method"
+                           type="radio" value="bank_id_sign" id="methodBankId" />
+                    <label class="form-check-label" for="methodBankId">
+                        <strong>Bank iD SIGN</strong><br />
+                        <span class="text-muted">The signer authenticates and signs through their supported bank.</span>
+                    </label>
+                </div>
+
+                <div class="form-check">
+                    <input asp-for="Input.SigningMethod" class="form-check-input signing-method"
+                           type="radio" value="identify" id="methodIdentify" />
+                    <label class="form-check-label" for="methodIdentify">
+                        <strong>DigiSign Identify + simple signature</strong><br />
+                        <span class="text-muted">The signer completes a new ID-document verification before signing.</span>
+                    </label>
+                </div>
+
+                <div class="border rounded p-3 mt-3" id="identifyScenarioSettings">
+                    <label asp-for="Input.IdentifyScenarioId" class="form-label">Identify scenario</label>
+                    @if (Model.IdentifyScenarios.Count > 0)
+                    {
+                        <select asp-for="Input.IdentifyScenarioId" class="form-select">
+                            <option value="">Select a scenario</option>
+                            @foreach (var scenario in Model.IdentifyScenarios)
+                            {
+                                <option value="@scenario.Id">@scenario.Name (@scenario.ApprovalMode)</option>
+                            }
+                        </select>
+                    }
+                    else
+                    {
+                        <input asp-for="Input.IdentifyScenarioId" class="form-control" placeholder="Identify scenario UUID" />
+                    }
+                    <button type="submit" asp-page-handler="LoadIdentifyScenarios"
+                            class="btn btn-outline-primary mt-3"
+                            formnovalidate
+                            disabled="@(!Model.Authentication.IsConfigured)">Load Identify scenarios</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><strong>4. Signature placement</strong></div>
+            <div class="card-body">
+                <p class="text-muted">
+                    Coordinates are PDF points measured from the top-left corner. One inch is 72 points.
+                </p>
+                <div class="row g-3">
+                    <div class="col-sm-4">
+                        <label asp-for="Input.SignaturePage" class="form-label">Page</label>
+                        <input asp-for="Input.SignaturePage" type="number" min="1" class="form-control" />
+                    </div>
+                    <div class="col-sm-4">
+                        <label asp-for="Input.SignatureX" class="form-label">X coordinate</label>
+                        <input asp-for="Input.SignatureX" type="number" min="0" class="form-control" />
+                    </div>
+                    <div class="col-sm-4">
+                        <label asp-for="Input.SignatureY" class="form-label">Y coordinate</label>
+                        <input asp-for="Input.SignatureY" type="number" min="0" class="form-control" />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <details class="mb-4">
+            <summary class="btn btn-outline-secondary">Advanced callback settings</summary>
+            <div class="border rounded p-3 mt-3">
+                <label asp-for="Input.CallbackUrl" class="form-label">Signing callback URL</label>
+                <input asp-for="Input.CallbackUrl" class="form-control mb-3" />
+                <label asp-for="Input.EmbedLinkExpiration" class="form-label">Embed-link validity in minutes</label>
+                <input asp-for="Input.EmbedLinkExpiration" type="number" min="1" max="60" class="form-control" />
+            </div>
+        </details>
+
+        <button type="submit" asp-page-handler="Start" class="btn btn-primary btn-lg"
+                disabled="@(!Model.Authentication.IsConfigured)">Create envelope and start signing</button>
+        <a class="btn btn-outline-secondary btn-lg" asp-page="/Index">Back</a>
+    </form>
+
+    @section Scripts {
+        <script>
+            const identifySettings = document.getElementById('identifyScenarioSettings');
+            function updateSigningMethod() {
+                identifySettings.hidden = document.querySelector('input[name="Input.SigningMethod"]:checked')?.value !== 'identify';
+            }
+            document.querySelectorAll('.signing-method').forEach(input => {
+                input.addEventListener('change', updateSigningMethod);
+            });
+            updateSigningMethod();
+        </script>
+    }
+}

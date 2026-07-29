@@ -19,7 +19,6 @@ public sealed record DigiSignCompletion(
 public static class DigiSignSession
 {
     public const string BaseUrlKey = "DigiSign:BaseUrl";
-    public const string BearerTokenKey = "DigiSign:BearerToken";
     public const string IdentificationIdKey = "DigiSign:IdentificationId";
     public const string FlowIdKey = "DigiSign:FlowId";
     private const string CompletionKey = "DigiSign:Completion";

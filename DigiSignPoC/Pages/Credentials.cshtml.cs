@@ -1,0 +1,64 @@
+using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+
+namespace DigiSignPoC.Pages;
+
+public class CredentialsModel(
+    DigiSignAuthenticationCache authenticationCache,
+    ILogger<CredentialsModel> logger) : PageModel
+{
+    [BindProperty]
+    public InputModel Input { get; set; } = new();
+
+    public DigiSignAuthenticationSnapshot Authentication { get; private set; } =
+        authenticationCache.GetSnapshot();
+
+    public string? ErrorMessage { get; private set; }
+    public string? SuccessMessage { get; private set; }
+
+    public void OnGet()
+    {
+        Authentication = authenticationCache.GetSnapshot();
+        Input.BaseUrl = Authentication.BaseUrl;
+    }
+
+    public async Task OnPostAsync()
+    {
+        if (!ModelState.IsValid)
+        {
+            ErrorMessage = "Check the DigiSign environment and credentials.";
+            Authentication = authenticationCache.GetSnapshot();
+            return;
+        }
+
+        try
+        {
+            Authentication = await authenticationCache.ConfigureAsync(
+                Input.BaseUrl,
+                Input.BearerToken,
+                Input.AccessKey,
+                Input.SecretKey,
+                HttpContext.RequestAborted);
+            SuccessMessage = "DigiSign credentials are configured and the bearer token is cached in application memory.";
+            Input = new InputModel { BaseUrl = Authentication.BaseUrl };
+            ModelState.Clear();
+        }
+        catch (DigiSignAuthenticationException exception)
+        {
+            logger.LogWarning(exception, "Configuring shared DigiSign authentication failed.");
+            ErrorMessage = exception.Message;
+            Authentication = authenticationCache.GetSnapshot();
+        }
+    }
+
+    public sealed class InputModel
+    {
+        [Required]
+        public string BaseUrl { get; set; } = "";
+
+        public string? BearerToken { get; set; }
+        public string? AccessKey { get; set; }
+        public string? SecretKey { get; set; }
+    }
+}

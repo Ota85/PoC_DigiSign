@@ -3,14 +3,25 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@ViewData["Title"] - DigiSign Identify PoC</title>
+    <title>@ViewData["Title"] - DigiSign PoC</title>
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
 </head>
 <body>
     <header>
-        <nav class="navbar navbar-light bg-white border-bottom mb-3">
+        <nav class="navbar navbar-expand-md navbar-light bg-white border-bottom mb-3">
             <div class="container">
-                <a class="navbar-brand" asp-page="/Index">DigiSign Identify PoC</a>
+                <a class="navbar-brand" asp-page="/Index">DigiSign PoC</a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavigation"
+                        aria-controls="mainNavigation" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="mainNavigation">
+                    <div class="navbar-nav ms-auto">
+                        <a class="nav-link" asp-page="/Identify">Identify</a>
+                        <a class="nav-link" asp-page="/Signing">Sign document</a>
+                        <a class="nav-link" asp-page="/Credentials">Credentials</a>
+                    </div>
+                </div>
             </div>
         </nav>
     </header>

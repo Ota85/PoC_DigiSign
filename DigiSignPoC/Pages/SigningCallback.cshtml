@@ -1,0 +1,40 @@
+@page
+@model SigningCallbackModel
+@{
+    ViewData["Title"] = "DigiSign signing callback";
+}
+
+<h1>DigiSign signing</h1>
+
+@if (!Model.CompletionRecorded)
+{
+    <div class="alert alert-danger">
+        <h2 class="h5 alert-heading">The signing result could not be returned</h2>
+        <p class="mb-0">@Model.ErrorMessage</p>
+    </div>
+    <a class="btn btn-primary" asp-page="/Signing">Return to signing</a>
+}
+else
+{
+    <div class="alert alert-success">
+        <h2 class="h5 alert-heading">Signing response received</h2>
+        <p class="mb-0">The authoritative envelope response was saved. This popup will close automatically.</p>
+    </div>
+    <p id="closeFallback" class="text-muted" hidden>You can close this window and return to the PoC.</p>
+
+    @section Scripts {
+        <script>
+            const completionMessage = {
+                type: 'digisign-signing-complete',
+                flowId: @Json.Serialize(Model.FlowId)
+            };
+            if (window.opener) {
+                window.opener.postMessage(completionMessage, window.location.origin);
+            }
+            window.setTimeout(() => window.close(), 500);
+            window.setTimeout(() => {
+                document.getElementById('closeFallback').hidden = false;
+            }, 1200);
+        </script>
+    }
+}

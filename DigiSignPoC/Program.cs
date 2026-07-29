@@ -1,6 +1,21 @@
+using DigiSignPoC;
+using Microsoft.AspNetCore.DataProtection;
+
 var builder = WebApplication.CreateBuilder(args);
+var dataProtectionKeysPath = Path.Combine(
+    Path.GetTempPath(),
+    "DigiSignPoC",
+    "DataProtectionKeys");
+
+builder.Logging.ClearProviders();
+builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
 
 builder.Services.AddRazorPages();
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
+builder.Services.AddMemoryCache();
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
@@ -11,6 +26,7 @@ builder.Services.AddSession(options =>
 });
 
 builder.Services.AddHttpClient("DigiSign");
+builder.Services.AddSingleton<DigiSignAuthenticationCache>();
 
 var app = builder.Build();
 

@@ -1,0 +1,176 @@
+@page
+@model IdentifyModel
+@{
+    ViewData["Title"] = "DigiSign Identify";
+}
+
+<h1>DigiSign Identify</h1>
+<p class="lead">Run a standalone identity-verification workflow.</p>
+
+<div class="alert @(Model.Authentication.IsConfigured ? "alert-success" : "alert-warning")">
+    <strong>Shared authentication: @(Model.Authentication.IsConfigured ? "configured" : "not configured")</strong>
+    <span class="ms-2"><code>@Model.Authentication.BaseUrl</code></span>
+    <a class="btn btn-sm btn-outline-secondary ms-2" asp-page="/Credentials">Manage credentials</a>
+</div>
+
+@if (Model.ErrorMessage is not null)
+{
+    <div class="alert alert-danger">
+        <strong>@Model.ErrorMessage</strong>
+        @if (Model.ProviderError is not null)
+        {
+            <pre class="mb-0 mt-2 text-wrap">@Model.ProviderError</pre>
+        }
+    </div>
+}
+
+@if (Model.SuccessMessage is not null)
+{
+    <div class="alert alert-success">@Model.SuccessMessage</div>
+}
+
+@if (Model.VerificationUrl is not null)
+{
+    <div class="alert alert-success">
+        <strong>Identification created and started.</strong>
+        Open DigiSign to complete the verification.
+    </div>
+
+    <dl class="row">
+        <dt class="col-sm-3">Identification ID</dt>
+        <dd class="col-sm-9"><code>@Model.IdentificationId</code></dd>
+        <dt class="col-sm-3">Link valid to</dt>
+        <dd class="col-sm-9">@Model.ValidTo</dd>
+    </dl>
+
+    <button class="btn btn-primary" type="button" id="openDigiSign">Open DigiSign Identify</button>
+    <a class="btn btn-outline-secondary" asp-page="/Identify">Start over</a>
+
+    <div class="alert alert-warning mt-3" id="popupWarning" hidden>
+        The popup was blocked.
+        <a href="@Model.VerificationUrl" target="digisign-identify" class="verification-link">Open DigiSign manually</a>.
+    </div>
+    <div class="alert alert-info mt-3" id="verificationProgress" hidden>
+        <strong>Verification in progress.</strong>
+        <span id="progressText">Waiting for the callback.</span>
+        <div class="small mt-1">Elapsed: <span id="elapsed">00:00</span></div>
+    </div>
+
+    @section Scripts {
+        <script>
+            const verificationUrl = @Json.Serialize(Model.VerificationUrl);
+            const flowId = @Json.Serialize(Model.FlowId);
+            const stateUrl = @Json.Serialize(Url.Page("/Identify", "VerificationState", new { flowId = Model.FlowId }));
+            const resultUrl = @Json.Serialize(Url.Page("/Result", new { flowId = Model.FlowId }));
+            let popup = null;
+            let startedAt = null;
+            let timer = null;
+
+            function elapsedText(milliseconds) {
+                const seconds = Math.floor(milliseconds / 1000);
+                return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
+            }
+
+            async function poll() {
+                if (startedAt === null) return;
+                const elapsed = Date.now() - startedAt;
+                document.getElementById('elapsed').textContent = elapsedText(elapsed);
+                if (elapsed >= 15 * 60 * 1000) {
+                    document.getElementById('progressText').textContent = 'Timed out after 15 minutes.';
+                    return;
+                }
+
+                try {
+                    const response = await fetch(stateUrl, { cache: 'no-store', headers: { Accept: 'application/json' } });
+                    if (response.ok) {
+                        const state = await response.json();
+                        if (state.completed) {
+                            try { popup?.close(); } catch {}
+                            window.location.assign(state.resultUrl || resultUrl);
+                            return;
+                        }
+                    }
+                } catch {
+                    document.getElementById('progressText').textContent = 'Local status check failed; retrying.';
+                }
+
+                timer = window.setTimeout(poll, 1000);
+            }
+
+            function startPolling() {
+                if (startedAt !== null) return;
+                startedAt = Date.now();
+                document.getElementById('verificationProgress').hidden = false;
+                poll();
+            }
+
+            window.addEventListener('message', event => {
+                if (event.origin === window.location.origin &&
+                    event.data?.type === 'digisign-verification-complete' &&
+                    event.data?.flowId === flowId) {
+                    poll();
+                }
+            });
+
+            document.getElementById('openDigiSign').addEventListener('click', () => {
+                popup = window.open(
+                    verificationUrl,
+                    'digisign-identify',
+                    'popup=yes,width=1100,height=800,resizable=yes,scrollbars=yes');
+                document.getElementById('popupWarning').hidden = popup !== null;
+                popup?.focus();
+                startPolling();
+            });
+        </script>
+    }
+}
+else
+{
+    <form method="post">
+        <div class="card mb-4">
+            <div class="card-header"><strong>1. Identify scenario</strong></div>
+            <div class="card-body">
+                <label asp-for="Input.ScenarioId" class="form-label">Identify scenario</label>
+                @if (Model.Scenarios.Count > 0)
+                {
+                    <select asp-for="Input.ScenarioId" class="form-select">
+                        <option value="">Select a scenario</option>
+                        @foreach (var scenario in Model.Scenarios)
+                        {
+                            <option value="@scenario.Id">@scenario.Name (@scenario.ApprovalMode)</option>
+                        }
+                    </select>
+                }
+                else
+                {
+                    <input asp-for="Input.ScenarioId" class="form-control" placeholder="Scenario UUID" />
+                }
+                <button type="submit" asp-page-handler="LoadScenarios" class="btn btn-outline-primary mt-3"
+                        disabled="@(!Model.Authentication.IsConfigured)">Load available scenarios</button>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><strong>2. Identification settings</strong></div>
+            <div class="card-body">
+                <label asp-for="Input.Name" class="form-label">Display name</label>
+                <input asp-for="Input.Name" class="form-control mb-3" />
+
+                <details>
+                    <summary class="btn btn-outline-secondary">Advanced settings</summary>
+                    <div class="border rounded p-3 mt-3">
+                        <label asp-for="Input.RedirectUrl" class="form-label">Redirect URL</label>
+                        <input asp-for="Input.RedirectUrl" class="form-control mb-3" />
+                        <label asp-for="Input.LinkExpiration" class="form-label">Link validity in minutes</label>
+                        <input asp-for="Input.LinkExpiration" type="number" min="0" max="10080" class="form-control" />
+                        <div class="form-text">Use 0 for the DigiSign default.</div>
+                    </div>
+                </details>
+            </div>
+        </div>
+
+        <button type="submit" asp-page-handler="Start" class="btn btn-primary btn-lg"
+                disabled="@(!Model.Authentication.IsConfigured)">Create and start identification</button>
+        <a class="btn btn-outline-secondary btn-lg" asp-page="/Index">Back</a>
+    </form>
+}

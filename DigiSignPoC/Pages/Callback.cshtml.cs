@@ -1,10 +1,11 @@
-using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace DigiSignPoC.Pages;
 
-public class CallbackModel(IHttpClientFactory httpClientFactory, ILogger<CallbackModel> logger) : PageModel
+public class CallbackModel(
+    DigiSignAuthenticationCache authenticationCache,
+    ILogger<CallbackModel> logger) : PageModel
 {
     public string? FlowId { get; private set; }
     public string? ErrorMessage { get; private set; }
@@ -26,12 +27,10 @@ public class CallbackModel(IHttpClientFactory httpClientFactory, ILogger<Callbac
 
         var identificationId = session.GetString(DigiSignSession.IdentificationIdKey);
         var baseUrl = session.GetString(DigiSignSession.BaseUrlKey);
-        var bearerToken = session.GetString(DigiSignSession.BearerTokenKey);
         var queryParams = Request.Query.ToDictionary(pair => pair.Key, pair => pair.Value.ToString());
 
         if (string.IsNullOrWhiteSpace(identificationId) ||
-            string.IsNullOrWhiteSpace(baseUrl) ||
-            string.IsNullOrWhiteSpace(bearerToken))
+            string.IsNullOrWhiteSpace(baseUrl))
         {
             ErrorMessage = "The PoC session does not contain the active DigiSign verification.";
             return;
@@ -41,7 +40,6 @@ public class CallbackModel(IHttpClientFactory httpClientFactory, ILogger<Callbac
             FlowId,
             identificationId,
             baseUrl,
-            bearerToken,
             queryParams);
 
         DigiSignSession.SetCompletion(session, completion);
@@ -58,15 +56,13 @@ public class CallbackModel(IHttpClientFactory httpClientFactory, ILogger<Callbac
         string flowId,
         string identificationId,
         string baseUrl,
-        string bearerToken,
         Dictionary<string, string> queryParams)
     {
-        var http = httpClientFactory.CreateClient("DigiSign");
-        http.BaseAddress = new Uri($"{baseUrl.TrimEnd('/')}/");
-        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
-
         try
         {
+            var http = await authenticationCache.CreateAuthenticatedClientAsync(
+                baseUrl,
+                HttpContext.RequestAborted);
             using var response = await http.GetAsync($"api/identifications/{identificationId}");
             var responseBody = await response.Content.ReadAsStringAsync();
             var formattedResponse = FormatProviderResponse(responseBody);
@@ -115,6 +111,18 @@ public class CallbackModel(IHttpClientFactory httpClientFactory, ILogger<Callbac
                     providerResponseJson: formattedResponse,
                     errorMessage: "DigiSign returned a successful response, but its result was not valid JSON.");
             }
+        }
+        catch (DigiSignAuthenticationException exception)
+        {
+            logger.LogError(
+                exception,
+                "Shared DigiSign authentication was unavailable for identification {IdentificationId}.",
+                identificationId);
+            return CreateCompletion(
+                flowId,
+                identificationId,
+                queryParams,
+                errorMessage: exception.Message);
         }
         catch (HttpRequestException exception)
         {

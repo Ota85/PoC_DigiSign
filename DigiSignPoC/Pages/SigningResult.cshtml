@@ -1,0 +1,81 @@
+@page
+@model SigningResultModel
+@{
+    ViewData["Title"] = "Signing result";
+}
+
+<h1>Signing result</h1>
+
+@if (Model.ErrorMessage is not null)
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+
+@if (Model.Flow is not null && Model.Completion is not null)
+{
+    var normalizedStatus = Model.Completion.ProviderStatus?.ToLowerInvariant();
+    var completed = normalizedStatus == "completed";
+    var negative = normalizedStatus is "declined" or "disapproved" or "expired" or "cancelled" or "withdrawn";
+    var alertClass = completed ? "alert-success" : negative ? "alert-danger" : "alert-warning";
+
+    <div class="alert @alertClass">
+        <h2 class="h5 alert-heading">
+            @(completed ? "Envelope completed" : negative ? "Envelope was not signed" : "Envelope is not complete yet")
+        </h2>
+        <p class="mb-0">
+            Authoritative DigiSign status:
+            <strong>@(Model.Completion.ProviderStatus ?? "(not returned)")</strong>
+        </p>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><strong>Signing details</strong></div>
+        <div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-3">Envelope ID</dt>
+                <dd class="col-sm-9"><code>@Model.Flow.EnvelopeId</code></dd>
+                <dt class="col-sm-3">Recipient ID</dt>
+                <dd class="col-sm-9"><code>@Model.Flow.RecipientId</code></dd>
+                <dt class="col-sm-3">Document ID</dt>
+                <dd class="col-sm-9"><code>@Model.Flow.DocumentId</code></dd>
+                <dt class="col-sm-3">Signing method</dt>
+                <dd class="col-sm-9">@Model.Flow.SigningMethod</dd>
+                <dt class="col-sm-3">Callback event</dt>
+                <dd class="col-sm-9">@(Model.Completion.CallbackEvent ?? "(none)")</dd>
+                @if (Model.Completion.CallbackError is not null)
+                {
+                    <dt class="col-sm-3">Callback error</dt>
+                    <dd class="col-sm-9 text-danger">@Model.Completion.CallbackError</dd>
+                }
+            </dl>
+        </div>
+    </div>
+
+    @if (completed)
+    {
+        <a class="btn btn-success"
+           asp-page="/SigningResult"
+           asp-page-handler="Download"
+           asp-route-flowId="@Model.Flow.FlowId">Download signed PDF and audit log</a>
+    }
+    else
+    {
+        <a class="btn btn-outline-primary"
+           asp-page="/SigningResult"
+           asp-page-handler="Refresh"
+           asp-route-flowId="@Model.Flow.FlowId">Refresh envelope result</a>
+    }
+
+    @if (Model.Completion.ProviderResponseJson is not null)
+    {
+        <details class="mt-4">
+            <summary class="btn btn-outline-secondary">Complete DigiSign envelope response</summary>
+            <pre class="border rounded bg-light p-3 mt-3 overflow-auto"><code>@Model.Completion.ProviderResponseJson</code></pre>
+        </details>
+    }
+}
+
+<div class="mt-4">
+    <a class="btn btn-primary" asp-page="/Signing">Start a new signing flow</a>
+    <a class="btn btn-outline-secondary" asp-page="/Index">Choose another workflow</a>
+</div>
