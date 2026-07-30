@@ -14,14 +14,19 @@ public class SigningModel(
     IConfiguration configuration,
     ILogger<SigningModel> logger) : PageModel
 {
-    private const string BankIdSignMethod = "bank_id_sign";
     private const string IdentifyMethod = "identify";
+    private const string BankIdSignMethod = "bank_id_sign";
 
     [BindProperty]
     public InputModel Input { get; set; } = new();
 
     public DigiSignAuthenticationSnapshot Authentication { get; private set; } =
         authenticationCache.GetSnapshot();
+    public DigiSignAuthenticationValidation AuthenticationValidation { get; private set; } =
+        DigiSignAuthenticationValidation.NotChecked;
+    public bool CanUseWorkflow =>
+        Authentication.IsConfigured &&
+        !AuthenticationValidation.RequiresReauthentication;
 
     public string? ErrorMessage { get; private set; }
     public string? ProviderError { get; private set; }
@@ -33,10 +38,12 @@ public class SigningModel(
     public string? FlowId { get; private set; }
     public List<IdentifyScenarioOption> IdentifyScenarios { get; private set; } = [];
 
-    public void OnGet()
+    public async Task OnGetAsync()
     {
         Authentication = authenticationCache.GetSnapshot();
         LoadDefaults();
+        AuthenticationValidation = await authenticationCache.ValidateBearerTokenAsync(
+            HttpContext.RequestAborted);
     }
 
     public IActionResult OnGetSigningState(string? flowId)
@@ -75,12 +82,26 @@ public class SigningModel(
     public async Task OnPostLoadIdentifyScenariosAsync()
     {
         Authentication = authenticationCache.GetSnapshot();
+        AuthenticationValidation = await authenticationCache.ValidateBearerTokenAsync(
+            HttpContext.RequestAborted);
+        if (AuthenticationValidation.RequiresReauthentication)
+        {
+            return;
+        }
+
         await LoadIdentifyScenariosAsync();
     }
 
     public async Task OnPostStartAsync()
     {
         Authentication = authenticationCache.GetSnapshot();
+        AuthenticationValidation = await authenticationCache.ValidateBearerTokenAsync(
+            HttpContext.RequestAborted);
+        if (AuthenticationValidation.RequiresReauthentication)
+        {
+            return;
+        }
+
         if (!ValidateInput())
         {
             return;
@@ -456,7 +477,7 @@ public class SigningModel(
     private void LoadDefaults()
     {
         var cfg = configuration.GetSection("DigiSign");
-        Input.SigningMethod = BankIdSignMethod;
+        Input.SigningMethod = IdentifyMethod;
         Input.IdentifyScenarioId = cfg["ScenarioId"] ?? "";
         Input.EnvelopeName = "PoC document signing";
         Input.EmailBody = "Please review and sign the attached document.";

@@ -4,11 +4,30 @@
     ViewData["Title"] = "Document signing";
 }
 
+@if (Model.AuthenticationValidation.RequiresReauthentication)
+{
+    <div class="alert alert-warning">
+        <strong>Please update the bearer token.</strong>
+        <div>@Model.AuthenticationValidation.Message</div>
+        <a class="btn btn-warning mt-2" asp-page="/Credentials">Update DigiSign credentials</a>
+    </div>
+}
+else if (Model.AuthenticationValidation.WasChecked && !Model.AuthenticationValidation.IsValid)
+{
+    <div class="alert alert-warning">
+        <strong>Bearer-token validation is temporarily unavailable.</strong>
+        <div>@Model.AuthenticationValidation.Message</div>
+    </div>
+}
+
 <h1>Document signing</h1>
 <p class="lead">Create a DigiSign envelope and complete an embedded signing journey.</p>
 
-<div class="alert @(Model.Authentication.IsConfigured ? "alert-success" : "alert-warning")">
-    <strong>Shared authentication: @(Model.Authentication.IsConfigured ? "configured" : "not configured")</strong>
+<div class="alert @(Model.AuthenticationValidation.IsValid ? "alert-success" : "alert-warning")">
+    <strong>
+        Shared authentication:
+        @(Model.AuthenticationValidation.IsValid ? "bearer token validated" : "not validated")
+    </strong>
     <span class="ms-2"><code>@Model.Authentication.BaseUrl</code></span>
     <a class="btn btn-sm btn-outline-secondary ms-2" asp-page="/Credentials">Manage credentials</a>
 </div>
@@ -133,67 +152,23 @@ else
 {
     <form method="post" enctype="multipart/form-data" id="signingForm">
         <div class="card mb-4">
-            <div class="card-header"><strong>1. Document and envelope</strong></div>
-            <div class="card-body">
-                <label asp-for="Input.Document" class="form-label">PDF document</label>
-                <input asp-for="Input.Document" type="file" accept="application/pdf,.pdf" class="form-control mb-3" />
-
-                <label asp-for="Input.EnvelopeName" class="form-label">Envelope name</label>
-                <input asp-for="Input.EnvelopeName" class="form-control mb-3" />
-
-                <label asp-for="Input.EmailBody" class="form-label">Message to signer</label>
-                <textarea asp-for="Input.EmailBody" class="form-control" rows="3"></textarea>
-            </div>
-        </div>
-
-        <div class="card mb-4">
-            <div class="card-header"><strong>2. Signer</strong></div>
-            <div class="card-body">
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label asp-for="Input.SignerName" class="form-label">Full name</label>
-                        <input asp-for="Input.SignerName" class="form-control" />
-                    </div>
-                    <div class="col-md-6">
-                        <label asp-for="Input.SignerEmail" class="form-label">Email</label>
-                        <input asp-for="Input.SignerEmail" type="email" class="form-control" />
-                    </div>
-                    <div class="col-md-6">
-                        <label asp-for="Input.SignerMobile" class="form-label">Mobile number</label>
-                        <input asp-for="Input.SignerMobile" class="form-control" placeholder="+420..." />
-                        <div class="form-text">Optional unless required by the configured provider flow.</div>
-                    </div>
-                </div>
-                <div class="form-check mt-3">
-                    <input asp-for="Input.SuppressInvitationEmail" class="form-check-input" />
-                    <label asp-for="Input.SuppressInvitationEmail" class="form-check-label">
-                        Suppress DigiSign's invitation email and use only the embedded PoC link
-                    </label>
-                    <div class="form-text">
-                        This requires the corresponding advanced option to be enabled in the DigiSign workspace.
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="card mb-4">
-            <div class="card-header"><strong>3. Signing method</strong></div>
+            <div class="card-header"><strong>1. Signing and verification scenario</strong></div>
             <div class="card-body">
                 <div class="form-check mb-3">
                     <input asp-for="Input.SigningMethod" class="form-check-input signing-method"
-                           type="radio" value="bank_id_sign" id="methodBankId" />
-                    <label class="form-check-label" for="methodBankId">
-                        <strong>Bank iD SIGN</strong><br />
-                        <span class="text-muted">The signer authenticates and signs through their supported bank.</span>
+                           type="radio" value="identify" id="methodIdentify" />
+                    <label class="form-check-label" for="methodIdentify">
+                        <strong>DigiSign Identify + simple signature</strong><br />
+                        <span class="text-muted">The signer completes a new personal ID-document verification before signing.</span>
                     </label>
                 </div>
 
                 <div class="form-check">
                     <input asp-for="Input.SigningMethod" class="form-check-input signing-method"
-                           type="radio" value="identify" id="methodIdentify" />
-                    <label class="form-check-label" for="methodIdentify">
-                        <strong>DigiSign Identify + simple signature</strong><br />
-                        <span class="text-muted">The signer completes a new ID-document verification before signing.</span>
+                           type="radio" value="bank_id_sign" id="methodBankId" />
+                    <label class="form-check-label" for="methodBankId">
+                        <strong>Bank iD SIGN</strong><br />
+                        <span class="text-muted">The signer authenticates and signs through their supported bank.</span>
                     </label>
                 </div>
 
@@ -216,13 +191,13 @@ else
                     <button type="submit" asp-page-handler="LoadIdentifyScenarios"
                             class="btn btn-outline-primary mt-3"
                             formnovalidate
-                            disabled="@(!Model.Authentication.IsConfigured)">Load Identify scenarios</button>
+                            disabled="@(!Model.CanUseWorkflow)">Load Identify scenarios</button>
                 </div>
             </div>
         </div>
 
         <div class="card mb-4">
-            <div class="card-header"><strong>4. Signature placement</strong></div>
+            <div class="card-header"><strong>2. Signature placement</strong></div>
             <div class="card-body">
                 <p class="text-muted">
                     Coordinates are PDF points measured from the top-left corner. One inch is 72 points.
@@ -255,8 +230,52 @@ else
             </div>
         </details>
 
+        <div class="card mb-4">
+            <div class="card-header"><strong>3. Personal information</strong></div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label asp-for="Input.SignerName" class="form-label">Full name</label>
+                        <input asp-for="Input.SignerName" class="form-control" />
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Input.SignerEmail" class="form-label">Email</label>
+                        <input asp-for="Input.SignerEmail" type="email" class="form-control" />
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Input.SignerMobile" class="form-label">Mobile number</label>
+                        <input asp-for="Input.SignerMobile" class="form-control" placeholder="+420..." />
+                        <div class="form-text">Optional unless required by the configured provider flow.</div>
+                    </div>
+                </div>
+                <div class="form-check mt-3">
+                    <input asp-for="Input.SuppressInvitationEmail" class="form-check-input" />
+                    <label asp-for="Input.SuppressInvitationEmail" class="form-check-label">
+                        Suppress DigiSign's invitation email and use only the embedded PoC link
+                    </label>
+                    <div class="form-text">
+                        This requires the corresponding advanced option to be enabled in the DigiSign workspace.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><strong>4. Document and envelope</strong></div>
+            <div class="card-body">
+                <label asp-for="Input.Document" class="form-label">PDF document</label>
+                <input asp-for="Input.Document" type="file" accept="application/pdf,.pdf" class="form-control mb-3" />
+
+                <label asp-for="Input.EnvelopeName" class="form-label">Envelope name</label>
+                <input asp-for="Input.EnvelopeName" class="form-control mb-3" />
+
+                <label asp-for="Input.EmailBody" class="form-label">Message to signer</label>
+                <textarea asp-for="Input.EmailBody" class="form-control" rows="3"></textarea>
+            </div>
+        </div>
+
         <button type="submit" asp-page-handler="Start" class="btn btn-primary btn-lg"
-                disabled="@(!Model.Authentication.IsConfigured)">Create envelope and start signing</button>
+                disabled="@(!Model.CanUseWorkflow)">Create envelope and start signing</button>
         <a class="btn btn-outline-secondary btn-lg" asp-page="/Index">Back</a>
     </form>
 

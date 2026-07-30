@@ -4,11 +4,30 @@
     ViewData["Title"] = "DigiSign Identify";
 }
 
+@if (Model.AuthenticationValidation.RequiresReauthentication)
+{
+    <div class="alert alert-warning">
+        <strong>Please update the bearer token.</strong>
+        <div>@Model.AuthenticationValidation.Message</div>
+        <a class="btn btn-warning mt-2" asp-page="/Credentials">Update DigiSign credentials</a>
+    </div>
+}
+else if (Model.AuthenticationValidation.WasChecked && !Model.AuthenticationValidation.IsValid)
+{
+    <div class="alert alert-warning">
+        <strong>Bearer-token validation is temporarily unavailable.</strong>
+        <div>@Model.AuthenticationValidation.Message</div>
+    </div>
+}
+
 <h1>DigiSign Identify</h1>
 <p class="lead">Run a standalone identity-verification workflow.</p>
 
-<div class="alert @(Model.Authentication.IsConfigured ? "alert-success" : "alert-warning")">
-    <strong>Shared authentication: @(Model.Authentication.IsConfigured ? "configured" : "not configured")</strong>
+<div class="alert @(Model.AuthenticationValidation.IsValid ? "alert-success" : "alert-warning")">
+    <strong>
+        Shared authentication:
+        @(Model.AuthenticationValidation.IsValid ? "bearer token validated" : "not validated")
+    </strong>
     <span class="ms-2"><code>@Model.Authentication.BaseUrl</code></span>
     <a class="btn btn-sm btn-outline-secondary ms-2" asp-page="/Credentials">Manage credentials</a>
 </div>
@@ -146,7 +165,7 @@ else
                     <input asp-for="Input.ScenarioId" class="form-control" placeholder="Scenario UUID" />
                 }
                 <button type="submit" asp-page-handler="LoadScenarios" class="btn btn-outline-primary mt-3"
-                        disabled="@(!Model.Authentication.IsConfigured)">Load available scenarios</button>
+                        disabled="@(!Model.CanUseWorkflow)">Load available scenarios</button>
             </div>
         </div>
 
@@ -170,7 +189,7 @@ else
         </div>
 
         <button type="submit" asp-page-handler="Start" class="btn btn-primary btn-lg"
-                disabled="@(!Model.Authentication.IsConfigured)">Create and start identification</button>
+                disabled="@(!Model.CanUseWorkflow)">Create and start identification</button>
         <a class="btn btn-outline-secondary btn-lg" asp-page="/Index">Back</a>
     </form>
 }

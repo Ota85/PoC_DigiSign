@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
@@ -82,6 +83,7 @@ public sealed class DigiSignAuthenticationCache
             state.BaseUrl,
             state.AccessKey is not null && state.SecretKey is not null,
             state.BearerToken is not null,
+            state.BearerToken,
             state.TokenExpiresAt,
             state.TokenObtainedAt);
     }
@@ -155,7 +157,7 @@ public sealed class DigiSignAuthenticationCache
                 if (state.AccessKey is null || state.SecretKey is null)
                 {
                     throw new DigiSignAuthenticationException(
-                        "The shared bearer token is missing or expired. Configure DigiSign credentials again.");
+                        "The saved bearer token is missing or expired. Enter a new bearer token, or enter the DigiSign access key and secret key to obtain a new token.");
                 }
 
                 state = await RequestTokenAsync(state, cancellationToken);
@@ -172,6 +174,56 @@ public sealed class DigiSignAuthenticationCache
         finally
         {
             _gate.Release();
+        }
+    }
+
+    public async Task<DigiSignAuthenticationValidation> ValidateBearerTokenAsync(
+        CancellationToken cancellationToken = default)
+    {
+        HttpClient http;
+        try
+        {
+            http = await CreateAuthenticatedClientAsync(
+                cancellationToken: cancellationToken);
+        }
+        catch (DigiSignAuthenticationException exception)
+        {
+            return DigiSignAuthenticationValidation.ReauthenticationRequired(
+                exception.Message);
+        }
+
+        try
+        {
+            using (http)
+            using (var response = await http.GetAsync(
+                       "api/account/me",
+                       cancellationToken))
+            {
+                if (response.IsSuccessStatusCode)
+                {
+                    return DigiSignAuthenticationValidation.Valid;
+                }
+
+                if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                {
+                    return DigiSignAuthenticationValidation.ReauthenticationRequired(
+                        "DigiSign rejected the saved bearer token. Enter a new bearer token, or enter the DigiSign access key and secret key to obtain a new token.");
+                }
+
+                _logger.LogWarning(
+                    "DigiSign bearer-token validation returned {Status}.",
+                    response.StatusCode);
+                return DigiSignAuthenticationValidation.Unavailable(
+                    $"DigiSign could not validate the saved bearer token ({(int)response.StatusCode} {response.StatusCode}). You may continue, but the workflow can fail until DigiSign is available.");
+            }
+        }
+        catch (HttpRequestException exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "DigiSign could not be reached while validating the saved bearer token.");
+            return DigiSignAuthenticationValidation.Unavailable(
+                "DigiSign could not be reached to validate the saved bearer token. You may continue, but the workflow can fail until DigiSign is available.");
         }
     }
 
@@ -378,10 +430,30 @@ public sealed record DigiSignAuthenticationSnapshot(
     string BaseUrl,
     bool HasApiKeys,
     bool HasBearerToken,
+    string? BearerToken,
     DateTimeOffset? TokenExpiresAt,
     DateTimeOffset? TokenObtainedAt)
 {
     public bool IsConfigured => HasBearerToken || HasApiKeys;
+}
+
+public sealed record DigiSignAuthenticationValidation(
+    bool WasChecked,
+    bool IsValid,
+    bool RequiresReauthentication,
+    string? Message)
+{
+    public static DigiSignAuthenticationValidation NotChecked { get; } =
+        new(false, false, false, null);
+
+    public static DigiSignAuthenticationValidation Valid { get; } =
+        new(true, true, false, null);
+
+    public static DigiSignAuthenticationValidation ReauthenticationRequired(string message) =>
+        new(true, false, true, message);
+
+    public static DigiSignAuthenticationValidation Unavailable(string message) =>
+        new(true, false, false, message);
 }
 
 public sealed class DigiSignAuthenticationException : Exception

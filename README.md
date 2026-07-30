@@ -49,6 +49,10 @@ Open **Credentials** and enter:
 When API keys are supplied, the PoC exchanges them at `POST /api/auth-token`, caches and persists
 the token, and automatically refreshes it shortly before expiration.
 
+Opening either workflow validates the saved bearer token through `GET /api/account/me`. If DigiSign
+rejects it, the page shows a reauthentication alert at the top and disables workflow actions until
+the operator enters a new bearer token, or an `accessKey` and `secretKey` that can obtain one.
+
 Credentials and tokens:
 
 - keep the bearer token, environment, and token timestamps in
@@ -90,28 +94,29 @@ dotnet user-secrets set "DigiSign:SecretKey" "<secret-key>"
 ## Workflow 1: standalone Identify
 
 1. Open **Identify**.
-2. Load or enter an Identify scenario.
-3. Create an identification:
+2. Confirm that the saved bearer token is valid.
+3. Load or enter an Identify scenario.
+4. Create an identification:
 
    ```http
    POST /api/identifications
    ```
 
-4. Start it:
+5. Start it:
 
    ```http
    POST /api/identifications/{identificationId}/start
    ```
 
-5. Open the returned `identifyUrl` in a popup.
-6. DigiSign returns to `/Callback`.
-7. The callback loads the authoritative result:
+6. Open the returned `identifyUrl` in a popup.
+7. DigiSign returns to `/Callback`.
+8. The callback loads the authoritative result:
 
    ```http
    GET /api/identifications/{identificationId}
    ```
 
-8. The main page displays the status and complete provider response.
+9. The main page displays the status and complete provider response.
 
 The callback query string is displayed for diagnostics but is not treated as the authoritative
 verification result.
@@ -119,12 +124,14 @@ verification result.
 ## Workflow 2: document signing
 
 1. Open **Sign document**.
-2. Select a PDF, enter signer data, and select:
+2. Confirm that the saved bearer token is valid.
+3. Select the signing and verification scenario:
 
-   - **Bank iD SIGN**; or
-   - **DigiSign Identify + simple signature**.
+   - **DigiSign Identify + simple signature** (default); or
+   - **Bank iD SIGN**.
 
-3. The PoC creates the signing resources in this order:
+4. Enter signature placement and personal information, then select the PDF in the last form section.
+5. The PoC creates the signing resources in this order:
 
    ```text
    POST /api/envelopes
@@ -136,15 +143,15 @@ verification result.
    POST /api/envelopes/{envelopeId}/recipients/{recipientId}/embed
    ```
 
-4. The embedded URL opens in a popup.
-5. DigiSign returns to `/SigningCallback`.
-6. The callback loads the authoritative envelope:
+6. The embedded URL opens in a popup.
+7. DigiSign returns to `/SigningCallback`.
+8. The callback loads the authoritative envelope:
 
    ```http
    GET /api/envelopes/{envelopeId}
    ```
 
-7. When the status is `completed`, the result page can download the signed PDF and audit log:
+9. When the status is `completed`, the result page can download the signed PDF and audit log:
 
    ```http
    GET /api/envelopes/{envelopeId}/download

@@ -16,6 +16,11 @@ public class IdentifyModel(
 
     public DigiSignAuthenticationSnapshot Authentication { get; private set; } =
         authenticationCache.GetSnapshot();
+    public DigiSignAuthenticationValidation AuthenticationValidation { get; private set; } =
+        DigiSignAuthenticationValidation.NotChecked;
+    public bool CanUseWorkflow =>
+        Authentication.IsConfigured &&
+        !AuthenticationValidation.RequiresReauthentication;
 
     public string? ErrorMessage { get; private set; }
     public string? ProviderError { get; private set; }
@@ -26,10 +31,12 @@ public class IdentifyModel(
     public string? ValidTo { get; private set; }
     public List<ScenarioOption> Scenarios { get; private set; } = [];
 
-    public void OnGet()
+    public async Task OnGetAsync()
     {
         Authentication = authenticationCache.GetSnapshot();
         LoadDefaults();
+        AuthenticationValidation = await authenticationCache.ValidateBearerTokenAsync(
+            HttpContext.RequestAborted);
     }
 
     public IActionResult OnGetVerificationState(string? flowId)
@@ -66,12 +73,26 @@ public class IdentifyModel(
     public async Task OnPostLoadScenariosAsync()
     {
         Authentication = authenticationCache.GetSnapshot();
+        AuthenticationValidation = await authenticationCache.ValidateBearerTokenAsync(
+            HttpContext.RequestAborted);
+        if (AuthenticationValidation.RequiresReauthentication)
+        {
+            return;
+        }
+
         await LoadScenariosAsync();
     }
 
     public async Task OnPostStartAsync()
     {
         Authentication = authenticationCache.GetSnapshot();
+        AuthenticationValidation = await authenticationCache.ValidateBearerTokenAsync(
+            HttpContext.RequestAborted);
+        if (AuthenticationValidation.RequiresReauthentication)
+        {
+            return;
+        }
+
         if (!ValidateInput())
         {
             return;

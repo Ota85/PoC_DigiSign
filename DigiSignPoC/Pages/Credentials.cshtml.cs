@@ -21,6 +21,7 @@ public class CredentialsModel(
     {
         Authentication = authenticationCache.GetSnapshot();
         Input.BaseUrl = Authentication.BaseUrl;
+        Input.BearerToken = Authentication.BearerToken;
     }
 
     public async Task OnPostAsync()
@@ -41,7 +42,11 @@ public class CredentialsModel(
                 Input.SecretKey,
                 HttpContext.RequestAborted);
             SuccessMessage = "DigiSign credentials are configured and the bearer token is saved for future application starts.";
-            Input = new InputModel { BaseUrl = Authentication.BaseUrl };
+            Input = new InputModel
+            {
+                BaseUrl = Authentication.BaseUrl,
+                BearerToken = Authentication.BearerToken
+            };
             ModelState.Clear();
         }
         catch (DigiSignAuthenticationException exception)

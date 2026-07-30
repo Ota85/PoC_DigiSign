@@ -179,67 +179,45 @@ through the page remain in memory only.
 ## 6. Open the signing workflow
 
 1. On the home page, select **Open signing workflow** under **Sign a document**.
-2. Confirm that **Shared authentication: configured** is shown in green.
+2. Confirm that **Shared authentication: bearer token validated** is shown in green.
 3. Confirm that the displayed API URL is correct.
 
-If authentication is not configured, **Create envelope and start signing** remains unavailable.
-Select **Manage credentials** and complete section 5.
+Opening the signing or standalone Identify page validates the saved bearer token through
+`GET /api/account/me`. If DigiSign rejects the token, an update-token warning appears at the top of
+the page and workflow actions remain unavailable. Select **Update DigiSign credentials** and
+provide either:
+
+- a new bearer token; or
+- the DigiSign `accessKey` and `secretKey`, which the PoC exchanges for a new bearer token.
+
+If DigiSign cannot be reached, the page shows a warning instead of treating the token as rejected.
 
 ## 7. Complete the signing form
 
-### 7.1 Important order for Identify tests
+### 7.1 Signing and verification scenario
 
-If you intend to use **DigiSign Identify + simple signature**, load the Identify scenarios before
-selecting the PDF:
+Under **1. Signing and verification scenario**, choose exactly one route.
 
-1. Scroll to **3. Signing method**.
-2. Select **DigiSign Identify + simple signature**.
-3. Select **Load Identify scenarios**.
-4. Select the required scenario.
-5. Return to the top of the form and select the PDF.
+#### Option A (default): DigiSign Identify + simple signature
 
-Loading scenarios submits and reloads the page. Browsers clear file inputs during a reload, so a PDF
-selected before this action must be selected again.
+Select **DigiSign Identify + simple signature** when:
 
-You may also enter a known Identify scenario UUID directly without loading the list.
+- a new document/selfie verification must be connected to this signing envelope;
+- the recipient cannot or should not use Bank iD SIGN;
+- the workspace has an active Identify scenario.
 
-### 7.2 Document and envelope
+Select **Load Identify scenarios**, then select or enter the required **Identify scenario**. The
+scenario determines which documents, selfie/liveness steps, and approval mode DigiSign requires.
 
-Under **1. Document and envelope**:
+Loading scenarios submits and reloads the page. The document selector is intentionally last on the
+page, after scenario selection, so the browser does not clear an already selected PDF during this
+reload.
 
-1. Select **PDF document** and choose the PDF.
-2. Review **Envelope name**.
+You may also enter a known Identify scenario UUID directly without loading the list. For a
+time-bounded demonstration, prefer an automatic Identify scenario. A manual-approval scenario may
+pause the journey until a DigiSign administrator reviews it.
 
-   The name identifies the envelope in DigiSign and is also used as the email subject.
-
-3. Review **Message to signer**.
-
-   DigiSign uses this text in its recipient communication when provider email delivery is enabled.
-
-### 7.3 Signer
-
-Under **2. Signer**:
-
-1. Enter the recipient's legal or expected **Full name**.
-2. Enter a valid **Email**.
-3. Enter **Mobile number** when required by the workspace or selected signing method. Use an
-   international format such as `+420...`.
-4. Decide whether to select:
-
-   **Suppress DigiSign's invitation email and use only the embedded PoC link**
-
-   - Leave it cleared for the most compatible test. DigiSign may send its normal invitation email.
-   - Select it for an embedded-only demonstration.
-   - Suppression works only when the DigiSign workspace administrator has enabled the corresponding
-     advanced option.
-
-The PoC still requests email delivery of the completed document link.
-
-### 7.4 Signing method
-
-Under **3. Signing method**, choose exactly one route.
-
-#### Option A: Bank iD SIGN
+#### Option B: Bank iD SIGN
 
 Select **Bank iD SIGN** when:
 
@@ -250,23 +228,9 @@ Select **Bank iD SIGN** when:
 
 The PoC configures the DigiSign recipient with the `bank_id_sign` signature type.
 
-#### Option B: DigiSign Identify + simple signature
+### 7.2 Signature placement
 
-Select **DigiSign Identify + simple signature** when:
-
-- a new document/selfie verification must be connected to this signing envelope;
-- the recipient cannot or should not use Bank iD SIGN;
-- the workspace has an active Identify scenario.
-
-Select or enter the **Identify scenario**. The scenario determines which documents, selfie/liveness
-steps, and approval mode DigiSign requires.
-
-For a time-bounded demonstration, prefer an automatic Identify scenario. A manual-approval scenario
-may pause the journey until a DigiSign administrator reviews it.
-
-### 7.5 Signature placement
-
-Under **4. Signature placement**:
+Under **2. Signature placement**:
 
 1. Enter the **Page** number. Pages start at `1`.
 2. Enter the **X coordinate**.
@@ -285,7 +249,7 @@ does not preview the field before sending, so use a known PDF and verify the coo
 For repeatable production documents, use a DigiSign template or a unique signature placeholder
 instead of manual coordinates.
 
-### 7.6 Advanced callback settings
+### 7.3 Advanced callback settings
 
 Most users should keep **Advanced callback settings** unchanged.
 
@@ -296,6 +260,38 @@ Most users should keep **Advanced callback settings** unchanged.
 
 Changing the environment or restarting the PoC after the envelope is created can invalidate the
 local correlation needed by the callback.
+
+### 7.4 Personal information
+
+Under **3. Personal information**:
+
+1. Enter the recipient's legal or expected **Full name**.
+2. Enter a valid **Email**.
+3. Enter **Mobile number** when required by the workspace or selected signing method. Use an
+   international format such as `+420...`.
+4. Decide whether to select:
+
+   **Suppress DigiSign's invitation email and use only the embedded PoC link**
+
+   - Leave it cleared for the most compatible test. DigiSign may send its normal invitation email.
+   - Select it for an embedded-only demonstration.
+   - Suppression works only when the DigiSign workspace administrator has enabled the corresponding
+     advanced option.
+
+The PoC still requests email delivery of the completed document link.
+
+### 7.5 Document and envelope
+
+Under **4. Document and envelope**, the final form section:
+
+1. Select **PDF document** and choose the PDF.
+2. Review **Envelope name**.
+
+   The name identifies the envelope in DigiSign and is also used as the email subject.
+
+3. Review **Message to signer**.
+
+   DigiSign uses this text in its recipient communication when provider email delivery is enabled.
 
 ## 8. Create the envelope
 
