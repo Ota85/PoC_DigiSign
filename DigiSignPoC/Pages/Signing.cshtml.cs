@@ -318,14 +318,20 @@ public class SigningModel(
     private async Task<string?> CreateEmbedUrlWithRetryAsync(HttpClient http)
     {
         var callbackUrl = AddFlowMarker(Input.CallbackUrl.Trim(), FlowId!);
-        var payload = new
-        {
-            returnUrl = callbackUrl,
-            failureUrl = callbackUrl,
-            expireAt = DateTimeOffset.UtcNow
-                .AddMinutes(Input.EmbedLinkExpiration)
-                .ToString("O")
-        };
+        object payload = Input.EmbedLinkExpiration > 0
+            ? new
+            {
+                returnUrl = callbackUrl,
+                failureUrl = callbackUrl,
+                expireAt = DateTimeOffset.UtcNow
+                    .AddMinutes(Input.EmbedLinkExpiration)
+                    .ToString("O")
+            }
+            : new
+            {
+                returnUrl = callbackUrl,
+                failureUrl = callbackUrl
+            };
 
         HttpResponseMessage? lastResponse = null;
         const int maximumAttempts = 20;
@@ -456,7 +462,7 @@ public class SigningModel(
         Input.EmailBody = "Please review and sign the attached document.";
         Input.CallbackUrl = cfg["SigningRedirectUrl"].NullIfWhiteSpace()
                             ?? "https://sign.revolving.dev.linksoft.cz/SigningCallback";
-        Input.EmbedLinkExpiration = 5;
+        Input.EmbedLinkExpiration = 15;
         Input.SignaturePage = 1;
         Input.SignatureX = 72;
         Input.SignatureY = 650;
@@ -534,9 +540,9 @@ public class SigningModel(
             return false;
         }
 
-        if (Input.EmbedLinkExpiration is < 1 or > 60)
+        if (Input.EmbedLinkExpiration is < 0 or > 60)
         {
-            ErrorMessage = "Embed link validity must be between 1 and 60 minutes.";
+            ErrorMessage = "Embed link validity must be 0 or between 1 and 60 minutes.";
             return false;
         }
 

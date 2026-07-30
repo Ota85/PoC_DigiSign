@@ -250,7 +250,8 @@ else
                 <label asp-for="Input.CallbackUrl" class="form-label">Signing callback URL</label>
                 <input asp-for="Input.CallbackUrl" class="form-control mb-3" />
                 <label asp-for="Input.EmbedLinkExpiration" class="form-label">Embed-link validity in minutes</label>
-                <input asp-for="Input.EmbedLinkExpiration" type="number" min="1" max="60" class="form-control" />
+                <input asp-for="Input.EmbedLinkExpiration" type="number" min="0" max="60" class="form-control" />
+                <div class="form-text">Use 0 for DigiSign's 5-minute default; use an explicit value for a longer link.</div>
             </div>
         </details>
 

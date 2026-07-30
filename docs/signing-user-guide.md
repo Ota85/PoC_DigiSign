@@ -290,7 +290,8 @@ Most users should keep **Advanced callback settings** unchanged.
 
 - **Signing callback URL** must be an absolute URL that reaches `/SigningCallback` on the running
   PoC.
-- **Embed-link validity** may be between 1 and 60 minutes. The default is 5 minutes.
+- **Embed-link validity** defaults to 15 minutes. It may be `0` for DigiSign's 5-minute default,
+  or an explicit value between 1 and 60 minutes.
 
 Changing the environment or restarting the PoC after the envelope is created can invalidate the
 local correlation needed by the callback.
@@ -565,9 +566,9 @@ The callback query parameters drive navigation and diagnostics. The envelope ret
 DigiSign is the authoritative status. The PoC requests a combined download containing the signable
 document and audit log after status `completed`.
 
-The embedded URL is short-lived. The PoC sets an explicit validity of 1 to 60 minutes, with a
-default of 5 minutes. DigiSign also documents 5 minutes as the default when no expiration is
-provided.
+The embedded URL is short-lived. The PoC defaults to an explicit validity of 15 minutes. It accepts
+`0` to omit the expiration and use DigiSign's 5-minute default, or another explicit validity from
+1 to 60 minutes.
 
 The PoC retries creation of the embedded URL for up to 20 attempts with a two-second interval when
 DigiSign temporarily returns HTTP 400, 409, or 422 while preparing the sent envelope.
