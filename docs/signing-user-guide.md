@@ -107,7 +107,7 @@ Have the following available:
 
 - the recipient's full name;
 - a valid email address;
-- a mobile number if the selected provider configuration requires one;
+- a mobile number in international format for required SMS verification before document display;
 - access to a supported Bank iD for Bank iD SIGN; or
 - suitable identity documents and a camera-equipped device for DigiSign Identify.
 
@@ -141,8 +141,8 @@ Authenticate and sign              Scan/verify identity, then sign
 
 | Signing route | Recipient experience | Identity-document scan | PoC recipient configuration |
 |---|---|---|---|
-| Bank iD SIGN | Continue to a supported bank, authenticate, authorize, return | No | `signatureType = bank_id_sign` |
-| DigiSign Identify + simple signature | Complete the selected Identify scenario, return to the document, apply simple signature | Normally yes; determined by the scenario | `signatureType = simple`; `authenticationOnSignature = identify` |
+| Bank iD SIGN | Verify an SMS code, then continue to a supported bank, authenticate, authorize, return | No | `authenticationOnOpen = sms`; `signatureType = bank_id_sign` |
+| DigiSign Identify + simple signature | Verify an SMS code, complete the selected Identify scenario, return to the document, apply simple signature | Normally yes; determined by the scenario | `authenticationOnOpen = sms`; `signatureType = simple`; `authenticationOnSignature = identify` |
 
 In both routes, the signing window returns to the PoC callback and the PoC retrieves the envelope
 from DigiSign. A successful browser return alone is not treated as proof of a completed envelope.
@@ -271,8 +271,9 @@ Under **3. Personal information**:
 
 1. Enter the recipient's legal or expected **Full name**.
 2. Enter a valid **Email**.
-3. Enter **Mobile number** when required by the workspace or selected signing method. Use an
-   international format such as `+420...`.
+3. Enter **Mobile number for SMS verification** in international format, such as
+   `+420123456789`. This field is required. DigiSign sends a code to this number and requires the
+   recipient to enter it before displaying the document.
 4. Decide whether to select:
 
    **Suppress DigiSign's invitation email and use only the embedded PoC link**

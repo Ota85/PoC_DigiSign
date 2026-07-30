@@ -57,10 +57,12 @@ the operator enters a new bearer token, or an `accessKey` and `secretKey` that c
 
 Credentials and tokens:
 
-- keep the bearer token, environment, and token timestamps in
+- keep only the bearer token, environment, and token timestamps in
   `DigiSignPoC/App_Data/digisign-auth.json`;
 - load the saved bearer token when the application restarts;
-- keep API keys entered through the UI only in the ASP.NET process;
+- keep access and secret keys in application memory only;
+- automatically obtain and save a fresh bearer token while API keys are still available in the
+  current application session;
 - are never stored in the browser session;
 - are shared by all users of this PoC process.
 
@@ -133,6 +135,7 @@ verification result.
    - **Bank iD SIGN**.
 
 4. Enter signature placement and personal information, then select the PDF in the last form section.
+   The mobile number is required because DigiSign verifies an SMS code before displaying documents.
 5. The PoC creates the signing resources in this order:
 
    ```text
@@ -162,7 +165,8 @@ verification result.
 ### Bank iD SIGN recipient
 
 The Bank iD path configures the recipient with `signatureType = bank_id_sign`. Availability depends
-on the DigiSign workspace and the signer having a supported Bank iD.
+on the DigiSign workspace and the signer having a supported Bank iD. Before the bank-signing step,
+the recipient completes SMS verification through `authenticationOnOpen = sms`.
 
 ### Identify-protected recipient
 
@@ -171,6 +175,7 @@ The Identify path configures:
 ```json
 {
   "signatureType": "simple",
+  "authenticationOnOpen": "sms",
   "authenticationOnSignature": "identify",
   "identifyScenario": "<scenario-id>",
   "identifyValidatedFields": ["name"]
@@ -179,6 +184,9 @@ The Identify path configures:
 
 This intentionally creates a new envelope-linked identification. DigiSign's public API does not
 document attaching the standalone identification from workflow 1 to a later envelope.
+
+Both signing routes require a recipient mobile number in international format. DigiSign sends the
+code and validates it before the recipient can view the document.
 
 ### Invitation delivery
 

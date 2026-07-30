@@ -27,6 +27,8 @@ public class CredentialsModel(
         Input.BearerToken = Authentication.BearerToken;
         AuthenticationValidation = await authenticationCache.ValidateBearerTokenAsync(
             HttpContext.RequestAborted);
+        Authentication = authenticationCache.GetSnapshot();
+        Input.BearerToken = Authentication.BearerToken;
         if (AuthenticationValidation.RequiresReauthentication)
         {
             WarningMessage = "Please update the bearer token.";
@@ -52,6 +54,7 @@ public class CredentialsModel(
                 HttpContext.RequestAborted);
             AuthenticationValidation = await authenticationCache.ValidateBearerTokenAsync(
                 HttpContext.RequestAborted);
+            Authentication = authenticationCache.GetSnapshot();
             if (AuthenticationValidation.RequiresReauthentication)
             {
                 WarningMessage = "Please update the bearer token. DigiSign did not accept the saved token.";

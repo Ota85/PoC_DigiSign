@@ -45,7 +45,8 @@ public sealed class DigiSignAuthenticationCache
         DateTimeOffset? tokenObtainedAt =
             bearerToken is not null ? DateTimeOffset.UtcNow : null;
 
-        if (bearerToken is null && TryLoadPersistedState() is { } persistedState)
+        var persistedState = TryLoadPersistedState();
+        if (bearerToken is null && persistedState is not null)
         {
             baseUrl = persistedState.BaseUrl;
             bearerToken = persistedState.BearerToken;
@@ -64,7 +65,6 @@ public sealed class DigiSignAuthenticationCache
         var secretKey = configuredEnvironmentMatches
             ? cfg["SecretKey"].NullIfWhiteSpace()
             : null;
-
         _cache.Set(
             CacheKey,
             new AuthenticationState(
@@ -99,9 +99,9 @@ public sealed class DigiSignAuthenticationCache
         bearerToken = bearerToken.NormalizeBearerToken();
         accessKey = accessKey.NullIfWhiteSpace();
         secretKey = secretKey.NullIfWhiteSpace();
-        var hasApiKeys = accessKey is not null && secretKey is not null;
+        var suppliedApiKeys = accessKey is not null && secretKey is not null;
 
-        if (bearerToken is null && !hasApiKeys)
+        if (bearerToken is null && !suppliedApiKeys)
         {
             throw new DigiSignAuthenticationException(
                 "Enter a bearer token, or enter both the DigiSign access key and secret key.");
@@ -110,7 +110,18 @@ public sealed class DigiSignAuthenticationCache
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var tokenToUse = hasApiKeys ? null : bearerToken;
+            var currentState = GetState();
+            if (!suppliedApiKeys &&
+                string.Equals(
+                    baseUrl,
+                    currentState.BaseUrl,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                accessKey = currentState.AccessKey;
+                secretKey = currentState.SecretKey;
+            }
+
+            var tokenToUse = suppliedApiKeys ? null : bearerToken;
             var state = new AuthenticationState(
                 baseUrl,
                 accessKey,
@@ -119,7 +130,7 @@ public sealed class DigiSignAuthenticationCache
                 TryReadJwtExpiration(tokenToUse),
                 tokenToUse is not null ? DateTimeOffset.UtcNow : null);
 
-            if (hasApiKeys)
+            if (suppliedApiKeys)
             {
                 state = await RequestTokenAsync(state, cancellationToken);
             }
@@ -182,58 +193,72 @@ public sealed class DigiSignAuthenticationCache
     public async Task<DigiSignAuthenticationValidation> ValidateBearerTokenAsync(
         CancellationToken cancellationToken = default)
     {
-        HttpClient http;
-        try
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            http = await CreateAuthenticatedClientAsync(
-                cancellationToken: cancellationToken);
-        }
-        catch (DigiSignAuthenticationException exception)
-        {
-            return DigiSignAuthenticationValidation.ReauthenticationRequired(
-                exception.Message);
-        }
-
-        try
-        {
-            using (http)
-            using (var response = await http.GetAsync(
-                       "api/account/me",
-                       cancellationToken))
+            HttpClient http;
+            try
             {
-                if (response.IsSuccessStatusCode)
-                {
-                    return DigiSignAuthenticationValidation.Valid;
-                }
+                http = await CreateAuthenticatedClientAsync(
+                    cancellationToken: cancellationToken);
+            }
+            catch (DigiSignAuthenticationException exception)
+            {
+                return DigiSignAuthenticationValidation.ReauthenticationRequired(
+                    exception.Message);
+            }
 
-                if (response.StatusCode is HttpStatusCode.Unauthorized)
+            try
+            {
+                using (http)
+                using (var response = await http.GetAsync(
+                           "api/account/me",
+                           cancellationToken))
                 {
-                    return DigiSignAuthenticationValidation.ReauthenticationRequired(
-                        "DigiSign rejected the saved bearer token. Enter a new bearer token, or enter the DigiSign access key and secret key to obtain a new token.");
-                }
+                    if (response.IsSuccessStatusCode)
+                    {
+                        return DigiSignAuthenticationValidation.Valid;
+                    }
 
-                if (response.StatusCode is HttpStatusCode.Forbidden)
-                {
-                    _logger.LogInformation(
-                        "The bearer token was accepted, but /api/account/me is forbidden for this API key.");
-                    return DigiSignAuthenticationValidation.Valid;
-                }
+                    if (response.StatusCode is HttpStatusCode.Unauthorized)
+                    {
+                        if (attempt == 0 &&
+                            await TryRefreshBearerTokenAsync(cancellationToken))
+                        {
+                            _logger.LogInformation(
+                                "The saved bearer token was rejected. A fresh token was obtained from the saved API keys.");
+                            continue;
+                        }
 
+                        return DigiSignAuthenticationValidation.ReauthenticationRequired(
+                            "DigiSign rejected the saved bearer token. Enter a new bearer token, or enter the DigiSign access key and secret key to obtain a new token.");
+                    }
+
+                    if (response.StatusCode is HttpStatusCode.Forbidden)
+                    {
+                        _logger.LogInformation(
+                            "The bearer token was accepted, but /api/account/me is forbidden for this API key.");
+                        return DigiSignAuthenticationValidation.Valid;
+                    }
+
+                    _logger.LogWarning(
+                        "DigiSign bearer-token validation returned {Status}.",
+                        response.StatusCode);
+                    return DigiSignAuthenticationValidation.Unavailable(
+                        $"DigiSign could not validate the saved bearer token ({(int)response.StatusCode} {response.StatusCode}). You may continue, but the workflow can fail until DigiSign is available.");
+                }
+            }
+            catch (HttpRequestException exception)
+            {
                 _logger.LogWarning(
-                    "DigiSign bearer-token validation returned {Status}.",
-                    response.StatusCode);
+                    exception,
+                    "DigiSign could not be reached while validating the saved bearer token.");
                 return DigiSignAuthenticationValidation.Unavailable(
-                    $"DigiSign could not validate the saved bearer token ({(int)response.StatusCode} {response.StatusCode}). You may continue, but the workflow can fail until DigiSign is available.");
+                    "DigiSign could not be reached to validate the saved bearer token. You may continue, but the workflow can fail until DigiSign is available.");
             }
         }
-        catch (HttpRequestException exception)
-        {
-            _logger.LogWarning(
-                exception,
-                "DigiSign could not be reached while validating the saved bearer token.");
-            return DigiSignAuthenticationValidation.Unavailable(
-                "DigiSign could not be reached to validate the saved bearer token. You may continue, but the workflow can fail until DigiSign is available.");
-        }
+
+        return DigiSignAuthenticationValidation.ReauthenticationRequired(
+            "Please update the bearer token.");
     }
 
     private PersistedAuthenticationState? TryLoadPersistedState()
@@ -368,6 +393,36 @@ public sealed class DigiSignAuthenticationCache
             throw new DigiSignAuthenticationException(
                 "DigiSign returned an invalid authentication response.",
                 exception);
+        }
+    }
+
+    private async Task<bool> TryRefreshBearerTokenAsync(
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var state = GetState();
+            if (state.AccessKey is null || state.SecretKey is null)
+            {
+                return false;
+            }
+
+            state = await RequestTokenAsync(state, cancellationToken);
+            await PersistStateAsync(state, cancellationToken);
+            _cache.Set(CacheKey, state);
+            return true;
+        }
+        catch (DigiSignAuthenticationException exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "A fresh bearer token could not be obtained from the saved DigiSign API keys.");
+            return false;
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 

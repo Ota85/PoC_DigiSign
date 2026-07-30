@@ -37,6 +37,7 @@ public class IdentifyModel(
         LoadDefaults();
         AuthenticationValidation = await authenticationCache.ValidateBearerTokenAsync(
             HttpContext.RequestAborted);
+        Authentication = authenticationCache.GetSnapshot();
     }
 
     public IActionResult OnGetVerificationState(string? flowId)
@@ -75,6 +76,7 @@ public class IdentifyModel(
         Authentication = authenticationCache.GetSnapshot();
         AuthenticationValidation = await authenticationCache.ValidateBearerTokenAsync(
             HttpContext.RequestAborted);
+        Authentication = authenticationCache.GetSnapshot();
         if (AuthenticationValidation.RequiresReauthentication)
         {
             return;
@@ -88,6 +90,7 @@ public class IdentifyModel(
         Authentication = authenticationCache.GetSnapshot();
         AuthenticationValidation = await authenticationCache.ValidateBearerTokenAsync(
             HttpContext.RequestAborted);
+        Authentication = authenticationCache.GetSnapshot();
         if (AuthenticationValidation.RequiresReauthentication)
         {
             return;

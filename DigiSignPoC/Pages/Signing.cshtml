@@ -233,6 +233,9 @@ else
         <div class="card mb-4">
             <div class="card-header"><strong>3. Personal information</strong></div>
             <div class="card-body">
+                <div class="alert alert-info">
+                    DigiSign sends an SMS code and verifies it before displaying the document.
+                </div>
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label asp-for="Input.SignerName" class="form-label">Full name</label>
@@ -243,9 +246,10 @@ else
                         <input asp-for="Input.SignerEmail" type="email" class="form-control" />
                     </div>
                     <div class="col-md-6">
-                        <label asp-for="Input.SignerMobile" class="form-label">Mobile number</label>
-                        <input asp-for="Input.SignerMobile" class="form-control" placeholder="+420..." />
-                        <div class="form-text">Optional unless required by the configured provider flow.</div>
+                        <label asp-for="Input.SignerMobile" class="form-label">Mobile number for SMS verification</label>
+                        <input asp-for="Input.SignerMobile" class="form-control" placeholder="+420123456789"
+                               inputmode="tel" autocomplete="tel" required />
+                        <div class="form-text">Required in international format, beginning with <code>+</code>.</div>
                     </div>
                 </div>
                 <div class="form-check mt-3">
