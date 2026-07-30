@@ -6,7 +6,7 @@ Small ASP.NET Core application for exercising two independent DigiSign journeys:
 2. PDF document signing with either **Bank iD SIGN** or a **simple signature protected by a new DigiSign Identify verification**.
 
 The landing page lets the user choose the workflow. Authentication is configured once and shared by
-both workflows in server-side application memory.
+both workflows. The bearer token is persisted locally for reuse after an application restart.
 
 This is a technical PoC, not a production identity or document-signing application.
 
@@ -46,19 +46,21 @@ Open **Credentials** and enter:
 - either a bearer JWT;
 - or `accessKey` and `secretKey`.
 
-When API keys are supplied, the PoC exchanges them at `POST /api/auth-token`, caches the token, and
-automatically refreshes it shortly before expiration.
+When API keys are supplied, the PoC exchanges them at `POST /api/auth-token`, caches and persists
+the token, and automatically refreshes it shortly before expiration.
 
 Credentials and tokens:
 
-- are held only in the ASP.NET process through `IMemoryCache`;
+- keep the bearer token, environment, and token timestamps in
+  `DigiSignPoC/App_Data/digisign-auth.json`;
+- load the saved bearer token when the application restarts;
+- keep API keys entered through the UI only in the ASP.NET process;
 - are never stored in the browser session;
-- are shared by all users of this PoC process;
-- disappear when the application restarts.
+- are shared by all users of this PoC process.
 
-This deliberately simple model is suitable only for a single-user PoC. A production application
-must use a secret store, scoped credentials, persistent workflow state, and appropriate access
-controls.
+The local token file is excluded from Git. This deliberately simple model is suitable only for a
+single-user PoC. A production application must use a secret store, scoped credentials, persistent
+workflow state, and appropriate access controls.
 
 Non-secret defaults are stored in `DigiSignPoC/appsettings.json`:
 

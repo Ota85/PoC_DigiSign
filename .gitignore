@@ -60,3 +60,7 @@ CodeCoverage/
 TestResult.xml
 nunit-*.xml
 /DigiSignPoC/.vs/DigiSignPoC/DesignTimeBuild/.dtbcache.v2
+
+# PoC runtime authentication state
+/DigiSignPoC/App_Data/digisign-auth.json
+/DigiSignPoC/App_Data/digisign-auth.json.tmp

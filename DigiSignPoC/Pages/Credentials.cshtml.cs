@@ -40,7 +40,7 @@ public class CredentialsModel(
                 Input.AccessKey,
                 Input.SecretKey,
                 HttpContext.RequestAborted);
-            SuccessMessage = "DigiSign credentials are configured and the bearer token is cached in application memory.";
+            SuccessMessage = "DigiSign credentials are configured and the bearer token is saved for future application starts.";
             Input = new InputModel { BaseUrl = Authentication.BaseUrl };
             ModelState.Clear();
         }

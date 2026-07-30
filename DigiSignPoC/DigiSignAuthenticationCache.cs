@@ -9,24 +9,60 @@ public sealed class DigiSignAuthenticationCache
 {
     private const string CacheKey = "DigiSign:SharedAuthentication";
     private static readonly TimeSpan RefreshMargin = TimeSpan.FromMinutes(2);
+    private static readonly JsonSerializerOptions PersistedStateJsonOptions = new()
+    {
+        WriteIndented = true
+    };
 
     private readonly IMemoryCache _cache;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<DigiSignAuthenticationCache> _logger;
+    private readonly string _persistedStatePath;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public DigiSignAuthenticationCache(
         IMemoryCache cache,
         IHttpClientFactory httpClientFactory,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IWebHostEnvironment environment,
+        ILogger<DigiSignAuthenticationCache> logger)
     {
         _cache = cache;
         _httpClientFactory = httpClientFactory;
+        _logger = logger;
+        _persistedStatePath = Path.Combine(
+            environment.ContentRootPath,
+            "App_Data",
+            "digisign-auth.json");
 
         var cfg = configuration.GetSection("DigiSign");
-        var baseUrl = NormalizeBaseUrl(cfg["BaseUrl"] ?? "https://api.staging.digisign.org");
+        var configuredBaseUrl = NormalizeBaseUrl(
+            cfg["BaseUrl"] ?? "https://api.staging.digisign.org");
+        var baseUrl = configuredBaseUrl;
         var bearerToken = cfg["BearerToken"].NullIfWhiteSpace();
-        var accessKey = cfg["AccessKey"].NullIfWhiteSpace();
-        var secretKey = cfg["SecretKey"].NullIfWhiteSpace();
+        DateTimeOffset? tokenExpiresAt = TryReadJwtExpiration(bearerToken);
+        DateTimeOffset? tokenObtainedAt =
+            bearerToken is not null ? DateTimeOffset.UtcNow : null;
+
+        if (bearerToken is null && TryLoadPersistedState() is { } persistedState)
+        {
+            baseUrl = persistedState.BaseUrl;
+            bearerToken = persistedState.BearerToken;
+            tokenExpiresAt =
+                persistedState.TokenExpiresAt ?? TryReadJwtExpiration(bearerToken);
+            tokenObtainedAt = persistedState.TokenObtainedAt;
+        }
+
+        var configuredEnvironmentMatches = string.Equals(
+            baseUrl,
+            configuredBaseUrl,
+            StringComparison.OrdinalIgnoreCase);
+        var accessKey = configuredEnvironmentMatches
+            ? cfg["AccessKey"].NullIfWhiteSpace()
+            : null;
+        var secretKey = configuredEnvironmentMatches
+            ? cfg["SecretKey"].NullIfWhiteSpace()
+            : null;
 
         _cache.Set(
             CacheKey,
@@ -35,8 +71,8 @@ public sealed class DigiSignAuthenticationCache
                 accessKey,
                 secretKey,
                 bearerToken,
-                TryReadJwtExpiration(bearerToken),
-                bearerToken is not null ? DateTimeOffset.UtcNow : null));
+                tokenExpiresAt,
+                tokenObtainedAt));
     }
 
     public DigiSignAuthenticationSnapshot GetSnapshot()
@@ -84,6 +120,7 @@ public sealed class DigiSignAuthenticationCache
                 state = await RequestTokenAsync(state, cancellationToken);
             }
 
+            await PersistStateAsync(state, cancellationToken);
             _cache.Set(CacheKey, state);
             return GetSnapshot();
         }
@@ -122,6 +159,7 @@ public sealed class DigiSignAuthenticationCache
                 }
 
                 state = await RequestTokenAsync(state, cancellationToken);
+                await PersistStateAsync(state, cancellationToken);
                 _cache.Set(CacheKey, state);
             }
 
@@ -134,6 +172,75 @@ public sealed class DigiSignAuthenticationCache
         finally
         {
             _gate.Release();
+        }
+    }
+
+    private PersistedAuthenticationState? TryLoadPersistedState()
+    {
+        if (!File.Exists(_persistedStatePath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var persistedState = JsonSerializer.Deserialize<PersistedAuthenticationState>(
+                File.ReadAllText(_persistedStatePath),
+                PersistedStateJsonOptions);
+            if (persistedState?.BearerToken.NullIfWhiteSpace() is not { } bearerToken)
+            {
+                return null;
+            }
+
+            return persistedState with
+            {
+                BaseUrl = NormalizeBaseUrl(persistedState.BaseUrl),
+                BearerToken = bearerToken
+            };
+        }
+        catch (Exception exception) when (
+            exception is IOException or
+                UnauthorizedAccessException or
+                JsonException or
+                DigiSignAuthenticationException)
+        {
+            _logger.LogWarning(
+                exception,
+                "The persisted DigiSign bearer token could not be loaded from {Path}.",
+                _persistedStatePath);
+            return null;
+        }
+    }
+
+    private async Task PersistStateAsync(
+        AuthenticationState state,
+        CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(_persistedStatePath)!;
+        var temporaryPath = $"{_persistedStatePath}.tmp";
+        var persistedState = new PersistedAuthenticationState(
+            state.BaseUrl,
+            state.BearerToken
+                ?? throw new DigiSignAuthenticationException(
+                    "DigiSign returned no bearer token to save."),
+            state.TokenExpiresAt,
+            state.TokenObtainedAt);
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+            await File.WriteAllTextAsync(
+                temporaryPath,
+                JsonSerializer.Serialize(persistedState, PersistedStateJsonOptions),
+                cancellationToken);
+            File.Move(temporaryPath, _persistedStatePath, overwrite: true);
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException)
+        {
+            throw new DigiSignAuthenticationException(
+                $"The bearer token could not be saved to {_persistedStatePath}.",
+                exception);
         }
     }
 
@@ -257,6 +364,12 @@ public sealed class DigiSignAuthenticationCache
         string? AccessKey,
         string? SecretKey,
         string? BearerToken,
+        DateTimeOffset? TokenExpiresAt,
+        DateTimeOffset? TokenObtainedAt);
+
+    private sealed record PersistedAuthenticationState(
+        string BaseUrl,
+        string BearerToken,
         DateTimeOffset? TokenExpiresAt,
         DateTimeOffset? TokenObtainedAt);
 }

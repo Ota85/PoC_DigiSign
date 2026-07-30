@@ -169,11 +169,12 @@ Credentials are configured once and used by both PoC workflows.
 8. Return to **Back to workflows**.
 
 When API keys are used, the PoC obtains a bearer token and refreshes it when it is close to
-expiration.
+expiration. The bearer token and selected environment are saved in
+`DigiSignPoC/App_Data/digisign-auth.json` and loaded on the next application start. API keys entered
+through the page remain in memory only.
 
-> **PoC security notice:** Credentials and tokens are kept in application memory and shared by
-> every user of that running PoC instance. They disappear when the application restarts. Do not
-> expose this PoC publicly or treat its credential storage as production-ready.
+> **PoC security notice:** The bearer token is stored as plain JSON and shared by every user of the
+> PoC instance. Do not expose this PoC publicly or treat its credential storage as production-ready.
 
 ## 6. Open the signing workflow
 
@@ -454,7 +455,7 @@ session. Complete or record the current result first.
 
 | Symptom | Likely cause | Resolution |
 |---|---|---|
-| Authentication is not configured | Credentials were not entered or the app restarted | Open **Manage credentials** and configure them again |
+| Authentication is not configured | No bearer token was saved or the saved token is unusable | Open **Manage credentials** and configure them again |
 | Credentials are rejected | Wrong keys, expired token, or environment mismatch | Match staging keys to staging and production keys to production |
 | Identify scenarios cannot be loaded | Identify is unavailable, credentials lack access, or no scenario exists | Check the workspace and create/activate a scenario |
 | Selected PDF disappeared | The scenarios button reloaded the form | Load scenarios first, then select the PDF again |
@@ -468,7 +469,7 @@ session. Complete or record the current result first.
 | Signing progress reaches 30 minutes | No callback reached the original session | Inspect the envelope in DigiSign and verify callback routing |
 | Result is not `completed` | Recipient has not finished or the envelope needs manual processing | Complete the provider journey, then select **Refresh envelope result** |
 | Download is unavailable | Envelope is not `completed` | Refresh after successful completion |
-| Download fails after restart | In-memory credentials or session state was lost | Reconfigure credentials; use DigiSign administration to retrieve the envelope |
+| Download fails after restart | Browser session state was lost, or the saved bearer token expired | Start a new flow or reconfigure credentials; use DigiSign administration to retrieve the envelope |
 
 ## 16. Safe demonstration checklist
 
@@ -489,14 +490,15 @@ After the demonstration:
 - [ ] Download and inspect the signed PDF and audit log.
 - [ ] Record the envelope ID in the test evidence.
 - [ ] Remove test envelopes/documents according to the agreed retention policy.
-- [ ] Stop the PoC to clear shared credentials and bearer tokens from application memory.
+- [ ] Remove `DigiSignPoC/App_Data/digisign-auth.json` when the saved PoC token is no longer needed.
 
 ## 17. PoC limitations
 
 This guide is operationally complete for the implemented PoC, but the application itself is not
 production-ready:
 
-- credentials are global and held in memory;
+- the bearer token is global and stored as plain JSON;
+- API keys entered through the UI are global and held in memory;
 - browser session state is not persisted;
 - only one active signing flow is retained per browser session;
 - callbacks require the same browser session;
