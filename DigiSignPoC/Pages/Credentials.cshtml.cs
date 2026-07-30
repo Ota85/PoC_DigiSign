@@ -13,15 +13,24 @@ public class CredentialsModel(
 
     public DigiSignAuthenticationSnapshot Authentication { get; private set; } =
         authenticationCache.GetSnapshot();
+    public DigiSignAuthenticationValidation AuthenticationValidation { get; private set; } =
+        DigiSignAuthenticationValidation.NotChecked;
 
     public string? ErrorMessage { get; private set; }
+    public string? WarningMessage { get; private set; }
     public string? SuccessMessage { get; private set; }
 
-    public void OnGet()
+    public async Task OnGetAsync()
     {
         Authentication = authenticationCache.GetSnapshot();
         Input.BaseUrl = Authentication.BaseUrl;
         Input.BearerToken = Authentication.BearerToken;
+        AuthenticationValidation = await authenticationCache.ValidateBearerTokenAsync(
+            HttpContext.RequestAborted);
+        if (AuthenticationValidation.RequiresReauthentication)
+        {
+            WarningMessage = "Please update the bearer token.";
+        }
     }
 
     public async Task OnPostAsync()
@@ -41,7 +50,21 @@ public class CredentialsModel(
                 Input.AccessKey,
                 Input.SecretKey,
                 HttpContext.RequestAborted);
-            SuccessMessage = "DigiSign credentials are configured and the bearer token is saved for future application starts.";
+            AuthenticationValidation = await authenticationCache.ValidateBearerTokenAsync(
+                HttpContext.RequestAborted);
+            if (AuthenticationValidation.RequiresReauthentication)
+            {
+                WarningMessage = "Please update the bearer token. DigiSign did not accept the saved token.";
+            }
+            else if (!AuthenticationValidation.IsValid)
+            {
+                WarningMessage = AuthenticationValidation.Message;
+            }
+            else
+            {
+                SuccessMessage = "DigiSign credentials are configured, validated, and the bearer token is saved for future application starts.";
+            }
+
             Input = new InputModel
             {
                 BaseUrl = Authentication.BaseUrl,
@@ -54,6 +77,7 @@ public class CredentialsModel(
             logger.LogWarning(exception, "Configuring shared DigiSign authentication failed.");
             ErrorMessage = exception.Message;
             Authentication = authenticationCache.GetSnapshot();
+            AuthenticationValidation = DigiSignAuthenticationValidation.NotChecked;
         }
     }
 

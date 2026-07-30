@@ -163,8 +163,12 @@ Credentials are configured once and used by both PoC workflows.
    - paste an existing bearer token; or
    - enter both `accessKey` and `secretKey`.
 
+   If an old bearer token is already displayed, entering both API keys takes priority and obtains a
+   replacement token. The bearer field accepts either the raw JWT or a value beginning with
+   `Bearer `.
+
 5. Select **Save and validate credentials**.
-6. Confirm the green **Authentication configured** message.
+6. Confirm the green **Authentication configured and validated** message.
 7. Check that the displayed API environment is the intended one.
 8. Return to **Back to workflows**.
 

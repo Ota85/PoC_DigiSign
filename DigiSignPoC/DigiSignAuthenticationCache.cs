@@ -40,7 +40,7 @@ public sealed class DigiSignAuthenticationCache
         var configuredBaseUrl = NormalizeBaseUrl(
             cfg["BaseUrl"] ?? "https://api.staging.digisign.org");
         var baseUrl = configuredBaseUrl;
-        var bearerToken = cfg["BearerToken"].NullIfWhiteSpace();
+        var bearerToken = cfg["BearerToken"].NormalizeBearerToken();
         DateTimeOffset? tokenExpiresAt = TryReadJwtExpiration(bearerToken);
         DateTimeOffset? tokenObtainedAt =
             bearerToken is not null ? DateTimeOffset.UtcNow : null;
@@ -96,11 +96,12 @@ public sealed class DigiSignAuthenticationCache
         CancellationToken cancellationToken = default)
     {
         baseUrl = NormalizeBaseUrl(baseUrl);
-        bearerToken = bearerToken.NullIfWhiteSpace();
+        bearerToken = bearerToken.NormalizeBearerToken();
         accessKey = accessKey.NullIfWhiteSpace();
         secretKey = secretKey.NullIfWhiteSpace();
+        var hasApiKeys = accessKey is not null && secretKey is not null;
 
-        if (bearerToken is null && (accessKey is null || secretKey is null))
+        if (bearerToken is null && !hasApiKeys)
         {
             throw new DigiSignAuthenticationException(
                 "Enter a bearer token, or enter both the DigiSign access key and secret key.");
@@ -109,15 +110,16 @@ public sealed class DigiSignAuthenticationCache
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            var tokenToUse = hasApiKeys ? null : bearerToken;
             var state = new AuthenticationState(
                 baseUrl,
                 accessKey,
                 secretKey,
-                bearerToken,
-                TryReadJwtExpiration(bearerToken),
-                bearerToken is not null ? DateTimeOffset.UtcNow : null);
+                tokenToUse,
+                TryReadJwtExpiration(tokenToUse),
+                tokenToUse is not null ? DateTimeOffset.UtcNow : null);
 
-            if (bearerToken is null)
+            if (hasApiKeys)
             {
                 state = await RequestTokenAsync(state, cancellationToken);
             }
@@ -204,10 +206,17 @@ public sealed class DigiSignAuthenticationCache
                     return DigiSignAuthenticationValidation.Valid;
                 }
 
-                if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                if (response.StatusCode is HttpStatusCode.Unauthorized)
                 {
                     return DigiSignAuthenticationValidation.ReauthenticationRequired(
                         "DigiSign rejected the saved bearer token. Enter a new bearer token, or enter the DigiSign access key and secret key to obtain a new token.");
+                }
+
+                if (response.StatusCode is HttpStatusCode.Forbidden)
+                {
+                    _logger.LogInformation(
+                        "The bearer token was accepted, but /api/account/me is forbidden for this API key.");
+                    return DigiSignAuthenticationValidation.Valid;
                 }
 
                 _logger.LogWarning(
@@ -239,7 +248,7 @@ public sealed class DigiSignAuthenticationCache
             var persistedState = JsonSerializer.Deserialize<PersistedAuthenticationState>(
                 File.ReadAllText(_persistedStatePath),
                 PersistedStateJsonOptions);
-            if (persistedState?.BearerToken.NullIfWhiteSpace() is not { } bearerToken)
+            if (persistedState?.BearerToken.NormalizeBearerToken() is not { } bearerToken)
             {
                 return null;
             }
@@ -472,4 +481,15 @@ internal static class AuthenticationStringExtensions
 {
     internal static string? NullIfWhiteSpace(this string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    internal static string? NormalizeBearerToken(this string? value)
+    {
+        var normalized = value.NullIfWhiteSpace();
+        if (normalized?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            normalized = normalized["Bearer ".Length..].NullIfWhiteSpace();
+        }
+
+        return normalized;
+    }
 }

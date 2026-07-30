@@ -47,7 +47,9 @@ Open **Credentials** and enter:
 - or `accessKey` and `secretKey`.
 
 When API keys are supplied, the PoC exchanges them at `POST /api/auth-token`, caches and persists
-the token, and automatically refreshes it shortly before expiration.
+the token, and automatically refreshes it shortly before expiration. When both API keys are entered,
+they take priority over any bearer token already displayed in the form. Pasted tokens may be either
+the raw JWT or an `Authorization` value beginning with `Bearer `.
 
 Opening either workflow validates the saved bearer token through `GET /api/account/me`. If DigiSign
 rejects it, the page shows a reauthentication alert at the top and disables workflow actions until
