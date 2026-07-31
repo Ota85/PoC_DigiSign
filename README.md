@@ -135,7 +135,6 @@ verification result.
    - **Bank iD SIGN**.
 
 4. Enter signature placement and personal information, then select the PDF in the last form section.
-   The mobile number is required because DigiSign verifies an SMS code before displaying documents.
 5. The PoC creates the signing resources in this order:
 
    ```text
@@ -165,8 +164,8 @@ verification result.
 ### Bank iD SIGN recipient
 
 The Bank iD path configures the recipient with `signatureType = bank_id_sign`. Availability depends
-on the DigiSign workspace and the signer having a supported Bank iD. Before the bank-signing step,
-the recipient completes SMS verification through `authenticationOnOpen = sms`.
+on the DigiSign workspace and the signer having a supported Bank iD. Authentication before opening
+the document is disabled through `authenticationOnOpen = none`.
 
 ### Identify-protected recipient
 
@@ -175,7 +174,7 @@ The Identify path configures:
 ```json
 {
   "signatureType": "simple",
-  "authenticationOnOpen": "sms",
+  "authenticationOnOpen": "none",
   "authenticationOnSignature": "identify",
   "identifyScenario": "<scenario-id>",
   "identifyValidatedFields": ["name"]
@@ -185,8 +184,8 @@ The Identify path configures:
 This intentionally creates a new envelope-linked identification. DigiSign's public API does not
 document attaching the standalone identification from workflow 1 to a later envelope.
 
-Both signing routes require a recipient mobile number in international format. DigiSign sends the
-code and validates it before the recipient can view the document.
+Neither signing route requires authentication before the recipient can view the document. A mobile
+number is optional.
 
 ### Invitation delivery
 

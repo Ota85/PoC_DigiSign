@@ -2,7 +2,6 @@ using System.ComponentModel.DataAnnotations;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
@@ -260,11 +259,14 @@ public class SigningModel(
             ["email"] = Input.SignerEmail.Trim(),
             ["language"] = "en",
             ["channelForDownload"] = "email",
-            ["authenticationOnOpen"] = "sms",
+            ["authenticationOnOpen"] = "none",
             ["authenticationOnDownload"] = "none"
         };
 
-        payload["mobile"] = Input.SignerMobile.Trim();
+        if (!string.IsNullOrWhiteSpace(Input.SignerMobile))
+        {
+            payload["mobile"] = Input.SignerMobile.Trim();
+        }
 
         if (Input.SuppressInvitationEmail)
         {
@@ -538,19 +540,6 @@ public class SigningModel(
             return false;
         }
 
-        if (string.IsNullOrWhiteSpace(Input.SignerMobile))
-        {
-            ErrorMessage = "Enter the signer's mobile number for SMS verification before opening the document.";
-            return false;
-        }
-
-        Input.SignerMobile = Input.SignerMobile.Trim();
-        if (!Regex.IsMatch(Input.SignerMobile, @"^\+[1-9]\d{7,14}$"))
-        {
-            ErrorMessage = "Enter the mobile number in international format, for example +420123456789.";
-            return false;
-        }
-
         if (string.IsNullOrWhiteSpace(Input.SignerName) ||
             string.IsNullOrWhiteSpace(Input.EnvelopeName) ||
             string.IsNullOrWhiteSpace(Input.EmailBody))
@@ -645,7 +634,6 @@ public class SigningModel(
         [Required]
         public string SignerEmail { get; set; } = "";
 
-        [Required]
         public string SignerMobile { get; set; } = "";
         public bool SuppressInvitationEmail { get; set; }
 
