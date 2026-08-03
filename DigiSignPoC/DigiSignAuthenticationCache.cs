@@ -40,7 +40,15 @@ public sealed class DigiSignAuthenticationCache
         var configuredBaseUrl = NormalizeBaseUrl(
             cfg["BaseUrl"] ?? "https://api.staging.digisign.org");
         var baseUrl = configuredBaseUrl;
-        var bearerToken = cfg["BearerToken"].NormalizeBearerToken();
+        var configuredBearerToken = cfg["BearerToken"].NormalizeBearerToken();
+        var bearerToken = TryReadJwtExpiration(configuredBearerToken) is not null
+            ? configuredBearerToken
+            : null;
+        if (configuredBearerToken is not null && bearerToken is null)
+        {
+            _logger.LogWarning(
+                "Ignoring an invalid configured DigiSign bearer token. A full JWT token is required.");
+        }
         DateTimeOffset? tokenExpiresAt = TryReadJwtExpiration(bearerToken);
         DateTimeOffset? tokenObtainedAt =
             bearerToken is not null ? DateTimeOffset.UtcNow : null;
@@ -105,6 +113,14 @@ public sealed class DigiSignAuthenticationCache
         {
             throw new DigiSignAuthenticationException(
                 "Enter a bearer token, or enter both the DigiSign access key and secret key.");
+        }
+
+        if (!suppliedApiKeys &&
+            bearerToken is not null &&
+            TryReadJwtExpiration(bearerToken) is null)
+        {
+            throw new DigiSignAuthenticationException(
+                "Enter the complete DigiSign JWT bearer token. It must have three dot-separated parts and contain an expiration.");
         }
 
         await _gate.WaitAsync(cancellationToken);
@@ -376,10 +392,17 @@ public sealed class DigiSignAuthenticationCache
                     "DigiSign authentication succeeded but returned no bearer token.");
             }
 
-            var token = tokenElement.GetString()!;
+            var token = tokenElement.GetString()!.NormalizeBearerToken()!;
+            var jwtExpiresAt = TryReadJwtExpiration(token);
+            if (jwtExpiresAt is null)
+            {
+                throw new DigiSignAuthenticationException(
+                    "DigiSign authentication returned an invalid JWT bearer token.");
+            }
+
             var expiresAt = document.RootElement.TryGetProperty("exp", out var exp)
                 ? DateTimeOffset.FromUnixTimeSeconds(exp.GetInt64())
-                : TryReadJwtExpiration(token);
+                : jwtExpiresAt;
 
             return state with
             {
